@@ -149,6 +149,13 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
                 f"Tension cible non atteinte ({actual_voltage_v} V < {req.tension_cible_v} V)"
             )
 
+    if req.courant_cible_a is not None:
+        actual_current_a = P * cell.courant_max_a
+        if actual_current_a + 1e-9 < req.courant_cible_a:
+            violations.append(
+                f"Courant cible non atteint ({round(actual_current_a, 2)} A < {round(req.courant_cible_a, 2)} A)"
+            )
+
     if vol_housing > 0 and vol_cellules > vol_housing:
         violations.append(
             f"Volume total cellules dépasse le volume pack ({round(vol_cellules, 2)} mm³ > {round(vol_housing, 2)} mm³)"

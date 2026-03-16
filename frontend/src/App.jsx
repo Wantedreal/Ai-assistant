@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { apiService } from './services/api'
 
 import Header from './components/Header'
-import CellSelector from './components/CellSelector'
+import { CellSelectorCard } from './components/CellSelector'
+import CellActionCard from './components/CellSelector'
 import ConstraintsForm from './components/ConstraintsForm'
-import PackPreview from './components/PackPreview'
+import PackViewer3D from './components/PackViewer3D'
 import ResultsPanel from './components/ResultsPanel'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -66,6 +67,25 @@ export default function App() {
         setLoading(false)
       }
     })()
+  }, [])
+
+  // ── Zoom-to-fit: scale down when viewport is shorter than content ──
+  const wrapperRef = useRef(null)
+  useEffect(() => {
+    const DESIGN_HEIGHT = 760   // recalibrated for tighter 360px row height
+    const MIN_ZOOM      = 0.45  // never shrink below this
+
+    const updateZoom = () => {
+      const vh = window.innerHeight
+      const zoom = Math.min(1, Math.max(MIN_ZOOM, vh / DESIGN_HEIGHT))
+      if (wrapperRef.current) {
+        wrapperRef.current.style.zoom = zoom
+      }
+    }
+
+    updateZoom()
+    window.addEventListener('resize', updateZoom)
+    return () => window.removeEventListener('resize', updateZoom)
   }, [])
 
   const cell = cells.find(c => c.id === selectedId) ?? null
@@ -155,24 +175,21 @@ export default function App() {
   }
 
   return (
-    <div className="page-wrapper">
+    <div className="page-wrapper" ref={wrapperRef}>
 
       <Header />
 
       <main className="page-content">
         <div className="bento-grid" id="bento-main">
 
-          {/* ── LEFT — Cell selector ── */}
-          <CellSelector
+          {/* ── LEFT TOP — Cell selector card ── */}
+          <CellSelectorCard
             cells={cells}
             selectedId={selectedId}
             onSelectCell={handleSelectCell}
             cell={cell}
             masseKg={masseKg}
             swellingLabel={swellingLabel}
-            calculating={calculating}
-            onCalculate={handleCalculate}
-            calcError={calcError}
           />
 
           {/* ── CENTER — Constraints form ── */}
@@ -181,13 +198,23 @@ export default function App() {
             onFieldChange={handleFieldChange}
           />
 
-          {/* ── RIGHT — Pack preview ── */}
-          <div className="photo-card" role="img" aria-label="Visualization" style={{ overflow: 'hidden' }}>
-            {result
-              ? <PackPreview result={result} />
-              : <img src="/images/ImageCard.png" alt="Visualization" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            }
+          {/* ── RIGHT — 3D Pack visualization ── */}
+          <div className="photo-card" aria-label="3D Visualization" style={{ padding: 0 }}>
+            <PackViewer3D
+              housingL={form.housing_l}
+              housingW={form.housing_l_small}
+              housingH={form.housing_h}
+              result={result}
+            />
           </div>
+
+          {/* ── LEFT BOTTOM — Action buttons ── */}
+          <CellActionCard
+            cell={cell}
+            calculating={calculating}
+            onCalculate={handleCalculate}
+            calcError={calcError}
+          />
 
           {/* ── BOTTOM ROW — Results ── */}
           <ResultsPanel result={result} margeMm={form.marge_mm} />

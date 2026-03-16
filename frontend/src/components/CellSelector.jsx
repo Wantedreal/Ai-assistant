@@ -4,19 +4,15 @@ import React from 'react'
 const fmt = (v, unit = '', d = 2) =>
   v != null ? `${Number(v).toFixed(d)} ${unit}`.trim() : '—'
 
-export default function CellSelector({
+export function CellSelectorCard({
   cells,
   selectedId,
   onSelectCell,
   cell,
   masseKg,
   swellingLabel,
-  calculating,
-  onCalculate,
-  calcError,
 }) {
   return (
-    <div className="left-col">
       <div className="projects-card">
         <div className="projects-card__header">
           <span className="projects-card__label">Cell Selector</span>
@@ -74,39 +70,41 @@ export default function CellSelector({
         </div>
         <ul className="projects-list" role="list" />
       </div>
+  )
+}
 
-      {/* Action buttons */}
-      <div className="social-card">
-        <div className="action-buttons">
-          <button
-            type="button"
-            className="modern-btn modern-btn-primary"
-            style={{ width: '100%' }}
-            disabled={calculating || !cell}
-            onClick={onCalculate}
-          >
-            {calculating
-              ? <span className="calc-spinner-wrapper">
-                  <span className="calc-spinner" />
-                  Calculating…
-                </span>
-              : 'Calculate'
-            }
-          </button>
-          <button
-            type="button"
-            className="modern-btn modern-btn-secondary"
-            style={{ width: '100%' }}
-            onClick={() => alert('PDF export — Sprint 5')}
-          >
-            Export PDF
-          </button>
-        </div>
-
-        {calcError && (
-          <div className="error-box">⚠ {calcError}</div>
-        )}
+export default function CellActionCard({ cell, calculating, onCalculate, calcError }) {
+  return (
+    <div className="social-card">
+      <div className="action-buttons">
+        <button
+          type="button"
+          className="modern-btn modern-btn-primary"
+          style={{ width: '100%' }}
+          disabled={calculating || !cell}
+          onClick={onCalculate}
+        >
+          {calculating
+            ? <span className="calc-spinner-wrapper">
+                <span className="calc-spinner" />
+                Calculating…
+              </span>
+            : 'Calculate'
+          }
+        </button>
+        <button
+          type="button"
+          className="modern-btn modern-btn-secondary"
+          style={{ width: '100%' }}
+          onClick={() => alert('PDF export — Sprint 5')}
+        >
+          Export PDF
+        </button>
       </div>
+
+      {calcError && (
+        <div className="error-box">⚠ {calcError}</div>
+      )}
     </div>
   )
 }
