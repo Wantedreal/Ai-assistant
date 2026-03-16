@@ -210,8 +210,8 @@ h6 {
 .bento-grid {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
-  grid-template-rows: 1fr 280px;
-  /* top row fills space, bottom row is 280px tall */
+  grid-template-rows: 1.35fr 1fr;
+  /* top row is slightly taller, bottom row scales down */
   column-gap: 0;
   row-gap: 0;
   flex: 1;
@@ -444,12 +444,15 @@ h6 {
 .page-wrapper {
   width: 100%;
   min-height: 100vh;
+  /* full viewport base height, but CAN grow */
   background-color: var(--color-bg);
-  padding: 24px 24px 24px 24px;
+  padding: 14px 18px;
+  /* extra compact padding globally */
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   overflow: auto;
+  /* restore normal window scrolling */
   -webkit-overflow-scrolling: touch;
 }
 
@@ -485,7 +488,7 @@ h6 {
   justify-content: space-between;
 }
 
-/* "JULIA HUANG" logotype */
+/* App logotype */
 .nav-logo {
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
@@ -500,12 +503,10 @@ h6 {
 
 .nav-logo__first {
   font-weight: var(--weight-regular);
-  /* "JULIA" light */
 }
 
 .nav-logo__last {
   font-weight: var(--weight-bold);
-  /* "HUANG" bold */
 }
 
 /* Nav links list */
@@ -546,19 +547,18 @@ h6 {
 
 
 /* ============================================================
-   LEFT COLUMN — wrapper for projects card + social card
+   LEFT COLUMN — Cell selector + action buttons
 ============================================================ */
 .left-col {
   grid-column: span 3;
   grid-row: span 2;
-  /* spans both top and bottom rows */
   display: flex;
   flex-direction: column;
   gap: 25px;
 }
 
 /* ============================================================
-   PROJECTS CARD  (Musea / Elara / Verve / Zephyr)
+   CELL SELECTOR CARD
 ============================================================ */
 .projects-card {
   background-color: var(--color-primary);
@@ -581,7 +581,7 @@ h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 20px 16px;
+  padding: 14px 16px 12px;
 }
 
 .projects-card__label {
@@ -615,7 +615,7 @@ h6 {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px 24px 0 24px;
+  padding: 14px 16px 0 16px;
 }
 
 /* Decorative blob shapes - HIDDEN */
@@ -670,14 +670,14 @@ h6 {
 }
 
 /* ============================================================
-   SOCIAL CARD  (Instagram / Twitter / LinkedIn)
+   ACTION BUTTONS CARD
 ============================================================ */
 .social-card {
   background-color: var(--color-primary);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   border: 1px solid var(--color-border);
-  padding: 22px 20px;
+  padding: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -720,7 +720,7 @@ h6 {
 }
 
 /* ============================================================
-   CENTER HEADLINE CARD
+   CENTER CONSTRAINTS CARD
 ============================================================ */
 .headline-card {
   grid-column: span 6;
@@ -730,7 +730,7 @@ h6 {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   border: 1px solid var(--color-border);
-  padding: 36px 36px 40px;
+  padding: 24px 28px 28px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -850,9 +850,7 @@ h6 {
 }
 
 /* ============================================================
-   BOTTOM ROW WRAPPER — equal bio + contact cards
-   Sits in the remaining 9 columns (after left-col's span 3)
-   and distributes them equally via flex.
+   BOTTOM ROW — Electrical + Mechanical results
 ============================================================ */
 .bottom-row {
   grid-column: span 9;
@@ -866,7 +864,7 @@ h6 {
 }
 
 /* ============================================================
-   BIO CARD
+   ELECTRICAL RESULTS CARD
 ============================================================ */
 .bio-card {
   flex: 1;
@@ -875,12 +873,12 @@ h6 {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   border: 1px solid var(--color-border);
-  padding: 28px 28px 32px;
+  padding: 20px 24px 24px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   position: relative;
-  overflow: visible;
+  overflow-y: auto;
   transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
 }
 
@@ -922,7 +920,7 @@ h6 {
 }
 
 /* ============================================================
-   CONTACT CARD  (cyan, "Contact me")
+   MECHANICAL RESULTS CARD
 ============================================================ */
 .contact-card {
   flex: 1;
@@ -931,12 +929,12 @@ h6 {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   border: 1px solid var(--color-border);
-  padding: 24px 24px 28px;
+  padding: 20px 24px 24px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   position: relative;
-  overflow: visible;
+  overflow-y: auto;
   transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
 }
 
@@ -982,6 +980,448 @@ h6 {
   letter-spacing: var(--tracking-tight);
   line-height: var(--leading-tight);
 }
+
+/* ============================================================
+   STATUS PILL — API online indicator in header
+============================================================ */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(34, 197, 94, 0.1);
+  color: #16a34a;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.status-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   SECTION LABEL — form group headers
+============================================================ */
+.section-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-muted);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   INPUT ROW — label + input pairs
+============================================================ */
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.input-row__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(0, 0, 0, 0.55);
+  min-width: 110px;
+  flex-shrink: 0;
+  line-height: 1.3;
+}
+
+.input-row__unit {
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.35);
+  margin-left: 2px;
+}
+
+/* ============================================================
+   CONSTRAINTS CARD — form layout
+============================================================ */
+.constraints-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.constraints-title {
+  font-size: 1rem;
+  font-weight: var(--weight-extrabold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ============================================================
+   MODE TOGGLE — Auto / Manual switch
+============================================================ */
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.mode-toggle__btn {
+  flex: 1;
+  padding: 7px 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mode-toggle__btn--active {
+  background: var(--color-text);
+  color: #fff;
+}
+
+.mode-toggle__btn--inactive {
+  background: var(--color-overlay);
+  color: var(--color-muted);
+}
+
+/* ============================================================
+   CELL DETAIL — info below spec badges
+============================================================ */
+.cell-dropdown-wrapper {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cell-dropdown-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  display: block;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted);
+}
+
+.cell-specs-wrapper {
+  padding: 10px 16px;
+}
+
+.cell-specs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.cell-detail {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  line-height: var(--leading-loose);
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.cell-detail__name {
+  color: var(--color-text);
+}
+
+.cell-type-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  background: var(--color-overlay);
+  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   ACTION BUTTONS — calculate + export
+============================================================ */
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.calc-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+.calc-spinner-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-box {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  font-size: var(--text-xs);
+  color: #dc2626;
+}
+
+/* ============================================================
+   RESULT ROW — label / value pairs in result cards
+============================================================ */
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--color-overlay);
+}
+
+.result-row--last {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.result-row__label {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.result-row__value {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.result-row__value--highlight {
+  color: var(--color-accent);
+}
+
+/* ============================================================
+   RESULTS HEADER — icon + title in result cards
+============================================================ */
+.results-header {
+  font-size: 0.8rem;
+  font-weight: var(--weight-extrabold);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-accent);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.results-placeholder {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  font-style: italic;
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* ============================================================
+   VERDICT BADGE — ACCEPT / REJECT
+============================================================ */
+.verdict-badge {
+  margin-top: 12px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.verdict-badge--accept {
+  border: 1.5px solid rgba(34, 197, 94, 0.35);
+}
+
+.verdict-badge--reject {
+  border: 1.5px solid rgba(239, 68, 68, 0.35);
+}
+
+.verdict-badge__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.verdict-badge__header--accept {
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.verdict-badge__header--reject {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.verdict-badge__text {
+  font-weight: 800;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+}
+
+.verdict-badge__text--accept {
+  color: #16a34a;
+}
+
+.verdict-badge__text--reject {
+  color: #dc2626;
+}
+
+.verdict-badge__detail {
+  padding: 6px 12px 8px;
+  font-size: 0.72rem;
+  color: #dc2626;
+  line-height: 1.5;
+  background: rgba(239, 68, 68, 0.04);
+  word-break: break-word;
+}
+
+.validation-errors {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  font-size: var(--text-xs);
+  color: #dc2626;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+/* ============================================================
+   PACK PREVIEW — 3D isometric SVG visualization
+============================================================ */
+.pack-preview {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #0f172a 0%, #1e293b 100%);
+  padding: 24px;
+  box-sizing: border-box;
+  gap: 14px;
+}
+
+.pack-preview__label {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pack-preview__verdict {
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+}
+
+.pack-preview__verdict--accept {
+  color: #22c55e;
+}
+
+.pack-preview__verdict--reject {
+  color: #ef4444;
+}
+
+.pack-preview__message {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.68rem;
+  text-align: center;
+  max-width: 170px;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   LOADING & ERROR SCREENS
+============================================================ */
+.loading-screen,
+.error-screen {
+  justify-content: center;
+  align-items: center;
+}
+
+.loading-screen {
+  gap: 16px;
+}
+
+.error-screen {
+  gap: 12px;
+}
+
+.loading-icon,
+.error-icon {
+  font-size: 2rem;
+}
+
+.loading-text {
+  color: var(--color-muted);
+}
+
+.error-text {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* ============================================================
+   CARD ENTRANCE ANIMATION
+============================================================ */
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.projects-card,
+.social-card,
+.headline-card,
+.photo-card,
+.bio-card,
+.contact-card {
+  animation: cardFadeIn var(--duration-slow) var(--ease-out) both;
+}
+
+.projects-card  { animation-delay: 0ms; }
+.headline-card  { animation-delay: 60ms; }
+.photo-card     { animation-delay: 120ms; }
+.social-card    { animation-delay: 180ms; }
+.bio-card       { animation-delay: 240ms; }
+.contact-card   { animation-delay: 300ms; }
 
 /* ============================================================
    RESPONSIVE BREAKPOINTS

@@ -35,17 +35,41 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     """
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STEP 1 — Determine P (Parallel) — driven by current constraint
-    # Formula: P = ceil(I_target / I_cell_max)
+    # STEP 1 — Determine P (Parallel)
+    # Formula: P = I_target / I_max (rounded up to guarantee meeting target)
     # ══════════════════════════════════════════════════════════════════════════
     if req.config_mode.value == "auto":
-        P = math.ceil(req.courant_cible_a / cell.courant_max_a)
+        if cell.courant_max_a > 0:
+            P = math.ceil(req.courant_cible_a / cell.courant_max_a)
+        else:
+            P = 1
 
-        # ── STEP 2 — Determine S (Series) — driven by energy constraint ──────
-        # Formula: S = ceil(E_target_Wh / (V_nom × C_cell_Ah × P))
-        energy_wh = req.energie_cible_kwh * 1000.0   # kWh → Wh conversion
-        energy_per_parallel_group = cell.tension_nominale * cell.capacite_ah * P
-        S = math.ceil(energy_wh / energy_per_parallel_group)
+        # ══════════════════════════════════════════════════════════════════════
+        # STEP 2 — Determine S (Series)
+        # - From voltage: S_v = V_target / Vn
+        # - From energy:  S_e = E / (Vn * P * Cap * DoD)
+        # If both are provided, choose the largest S so both targets are met.
+        # ══════════════════════════════════════════════════════════════════════
+        s_candidates = []
+
+        if req.tension_cible_v is not None:
+            if cell.tension_nominale > 0:
+                s_candidates.append(math.ceil(req.tension_cible_v / cell.tension_nominale))
+            else:
+                s_candidates.append(1)
+
+        if req.energie_cible_wh is not None:
+            dod_factor = (req.depth_of_discharge / 100.0)
+            denominator = cell.tension_nominale * P * cell.capacite_ah * dod_factor
+            if denominator > 0:
+                s_candidates.append(math.ceil(req.energie_cible_wh / denominator))
+            else:
+                s_candidates.append(1)
+
+        if not s_candidates:
+            raise ValueError("Either energie_cible_wh or tension_cible_v must be provided")
+
+        S = max(s_candidates)
 
     else:
         # Manual mode: bypass algorithm, use engineer's direct input
@@ -59,96 +83,98 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     total_cells = S * P
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STEP 3 — Electrical properties
+    # STEP 3 — Electrical properties and Dimensions Gonflés (Swelling)
     # ══════════════════════════════════════════════════════════════════════════
     actual_voltage_v   = round(S * cell.tension_nominale, 3)
     actual_capacity_ah = round(P * cell.capacite_ah, 3)
-    total_energy_wh    = round(actual_voltage_v * actual_capacity_ah, 2)
+    
+    # Target Energy formula: N_cellules * Vn * Cap * DoD
+    total_energy_wh    = round(total_cells * cell.tension_nominale * cell.capacite_ah, 2)
     usable_energy_wh   = round(total_energy_wh * (req.depth_of_discharge / 100.0), 2)
+    
     total_weight_kg    = round((total_cells * cell.masse_g) / 1000.0, 3)
-
-    # Energy density (Wh/kg) — useful engineering metric
     energy_density = round(total_energy_wh / total_weight_kg, 2) if total_weight_kg > 0 else 0.0
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # STEP 4 — Physical geometry (Array dimensions WITH swelling)
-    # Swelling factor applied on L and W axes (confirmed: height axis excluded
-    # for pouch cells — to review with technical expert for other geometries)
-    # ══════════════════════════════════════════════════════════════════════════
-
-    # taux_swelling_pct is stored as a fraction (0.08 = 8%) in the DB
-    # We handle both conventions safely:
+    # Dimension gonflés = Dim_cellule * (1 + Taux_gonflement/100)
     swelling_raw = cell.taux_swelling_pct
-    if swelling_raw > 1.0:
-        # Value stored as percentage (e.g. 8.0) — convert to fraction
-        swelling_factor = 1.0 + (swelling_raw / 100.0)
-    else:
-        # Value stored as fraction (e.g. 0.08) — use directly
-        swelling_factor = 1.0 + swelling_raw
+    swelling_factor = 1.0 + (swelling_raw / 100.0) if swelling_raw > 1.0 else 1.0 + swelling_raw
 
-    # ── Raw pack dimensions (no margins, with swelling) ───────────────────────
-    # Pouch / Prismatic cell layout:
-    #   L_array = S × longueur_cell × swelling   (series direction)
-    #   W_array = P × largeur_cell  × swelling   (parallel direction)
-    #   H_array = hauteur_cell                   (thickness — no stacking on H)
+    # Apply dimensions based on cell type geometry
     cell_type = (cell.type_cellule or "Pouch").lower()
-
+    
     if cell_type == "cylindrical":
-        # Cylindrical: longueur_mm == largeur_mm == diameter (confirmed in real data).
-        # hauteur_mm = physical height of the cylinder (65 mm for 18650, etc.)
-        # No swelling on cylindrical — rigid metal casing, all cylindrical rows
-        # in the dataset have taux_swelling_pct == 0.
-        diameter = cell.longueur_mm   # longueur == largeur for cylindrical cells
+        diameter = cell.longueur_mm
         L_raw = round(S * diameter, 2)
         W_raw = round(P * diameter, 2)
         H_raw = round(cell.hauteur_mm, 2)
-
-    elif cell_type == "prismatic":
-        # Prismatic: rigid rectangular aluminium casing, stacked face-to-face.
-        # swelling = 0.03 across all prismatic rows in the real dataset.
-        # Series direction → L axis, parallel stacks → W axis.
-        L_raw = round(S * cell.longueur_mm * swelling_factor, 2)
-        W_raw = round(P * cell.largeur_mm  * swelling_factor, 2)
+        L_gonfles = round(S * diameter, 2)
+        W_gonfles = round(P * diameter, 2)
+        H_gonfles = round(cell.hauteur_mm, 2)
+    else: # Pouch and Prismatic
+        L_raw = round(S * cell.longueur_mm, 2)
+        W_raw = round(P * cell.largeur_mm, 2)
         H_raw = round(cell.hauteur_mm, 2)
-
-    elif cell_type == "pouch":
-        # Pouch: flexible casing, highest swelling (0.08 in real dataset).
-        # Same stacking convention as prismatic.
-        L_raw = round(S * cell.longueur_mm * swelling_factor, 2)
-        W_raw = round(P * cell.largeur_mm  * swelling_factor, 2)
-        H_raw = round(cell.hauteur_mm, 2)
-
-    else:
-        # Unknown / future type — safe fallback to Pouch behaviour
-        L_raw = round(S * cell.longueur_mm * swelling_factor, 2)
-        W_raw = round(P * cell.largeur_mm  * swelling_factor, 2)
-        H_raw = round(cell.hauteur_mm, 2)
-
-    # ── Final pack dimensions (with margins on all 6 faces) ───────────────────
-    margin = req.marge_mm
-    L_final = round(L_raw + 2 * margin, 2)
-    W_final = round(W_raw + 2 * margin, 2)
-    H_final = round(H_raw + 2 * margin, 2)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # STEP 5 — Rule Engine: collision detection (15 mm per face)
-    # Condition: D_array_final ≤ D_housing  (margin already included in D_final)
-    # ══════════════════════════════════════════════════════════════════════════
-    axes = {
-        "Longueur (L)": (L_final, req.housing_l),
-        "Largeur  (l)": (W_final, req.housing_l_small),   # spec uses housing_l_small
-        "Hauteur  (h)": (H_final, req.housing_h),
-    }
+        L_gonfles = round(S * cell.longueur_mm * swelling_factor, 2)
+        W_gonfles = round(P * cell.largeur_mm  * swelling_factor, 2)
+        H_gonfles = round(cell.hauteur_mm, 2) # Keeping H un-swelled for Pouch/Prismatic based on prior setup
+        
+    # Taux d'occupation = (Volume_totale_cellules / Volume_pack) * 100
+    # Volume_totale_cellules = L * l * h * N_cellules
+    vol_cellules = total_cells * (cell.longueur_mm * cell.largeur_mm * cell.hauteur_mm)
+    vol_housing = req.housing_l * req.housing_l_small * req.housing_h
+    taux_occupation_pct = round((vol_cellules / vol_housing) * 100.0, 2) if vol_housing > 0 else 0.0
 
     violations = []
-    for axis_name, (pack_dim, housing_dim) in axes.items():
-        if pack_dim > housing_dim:
-            overflow = round(pack_dim - housing_dim, 2)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # STEP 4 — Target validation (energy / voltage / volume)
+    # These checks run even in MANUAL mode (S/P provided by user).
+    # ══════════════════════════════════════════════════════════════════════════
+    # Business rule: energy and voltage targets are coupled:
+    # if one is provided, the other is mandatory, and both must be satisfied.
+    if (req.tension_cible_v is None) != (req.energie_cible_wh is None):
+        violations.append(
+            "Les cibles Energie (energie_cible_wh) et Tension (tension_cible_v) doivent être renseignées ensemble."
+        )
+
+    if req.energie_cible_wh is not None:
+        if usable_energy_wh + 1e-9 < req.energie_cible_wh:
             violations.append(
-                f"{axis_name} : dépassement de {overflow} mm "
-                f"(pack={pack_dim} mm, boîtier={housing_dim} mm, "
-                f"marge={margin} mm × 2)"
+                f"Energie cible non atteinte ({usable_energy_wh} Wh < {round(req.energie_cible_wh, 2)} Wh)"
             )
+
+    if req.tension_cible_v is not None:
+        if actual_voltage_v + 1e-9 < req.tension_cible_v:
+            violations.append(
+                f"Tension cible non atteinte ({actual_voltage_v} V < {req.tension_cible_v} V)"
+            )
+
+    if vol_housing > 0 and vol_cellules > vol_housing:
+        violations.append(
+            f"Volume total cellules dépasse le volume pack ({round(vol_cellules, 2)} mm³ > {round(vol_housing, 2)} mm³)"
+        )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # STEP 5 — Collision Detection & Maring par cote calculation
+    # Formula: Margin par cote = (Dim_housing - Dim_gonflés) / 2
+    # ══════════════════════════════════════════════════════════════════════════
+    margin_l = round((req.housing_l - L_gonfles) / 2.0, 2)
+    margin_w = round((req.housing_l_small - W_gonfles) / 2.0, 2)
+    margin_h = round((req.housing_h - H_gonfles) / 2.0, 2)
+    
+    marges_reelles = {
+        "L": margin_l,
+        "W": margin_w,
+        "H": margin_h
+    }
+
+    # If any margin is smaller than the required safety margin (req.marge_mm), it's a reject
+    if margin_l < req.marge_mm:
+        violations.append(f"Longueur (L): marge insuffisante ({margin_l} mm < {req.marge_mm} mm)")
+    if margin_w < req.marge_mm:
+        violations.append(f"Largeur (l): marge insuffisante ({margin_w} mm < {req.marge_mm} mm)")
+    if margin_h < req.marge_mm:
+        violations.append(f"Hauteur (h): marge insuffisante ({margin_h} mm < {req.marge_mm} mm)")
 
     verdict = VerdictEnum.ACCEPT if not violations else VerdictEnum.REJECT
     justification = (
@@ -158,9 +184,10 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     )
 
     # ── §9.3.2 mandatory derived metrics ─────────────────────────────────────
-    energie_reelle_kwh = round(total_energy_wh / 1000.0, 4)   # Wh → kWh (spec unit)
+    energie_reelle_wh = round(usable_energy_wh, 2)            # Target Energy (Wh) = s*P * Vn * Cap * DoD
     tension_totale_v   = actual_voltage_v                      # V_nom × S
     courant_total_a    = round(P * cell.courant_max_a, 2)      # I_cell_max × P (spec §9.3.2)
+
 
     # ══════════════════════════════════════════════════════════════════════════
     # STEP 6 — Build and return result
@@ -170,13 +197,15 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         nb_serie=S,
         nb_parallele=P,
         dimensions_array=ArrayDimensions(
-            longueur_mm=L_final,
-            largeur_mm=W_final,
-            hauteur_mm=H_final,
+            longueur_mm=L_gonfles,
+            largeur_mm=W_gonfles,
+            hauteur_mm=H_gonfles,
         ),
         verdict=verdict,
         justification=justification,
-        energie_reelle_kwh=energie_reelle_kwh,
+        taux_occupation_pct=taux_occupation_pct,
+        marges_reelles=marges_reelles,
+        energie_reelle_wh=energie_reelle_wh,
         tension_totale_v=tension_totale_v,
         courant_total_a=courant_total_a,
 

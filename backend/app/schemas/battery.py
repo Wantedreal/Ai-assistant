@@ -58,7 +58,8 @@ class CalculationRequest(BaseModel):
     cell_id: int = Field(..., gt=0, description="Cell ID from catalogue")
     
     # Target specifications
-    energie_cible_kwh: float = Field(..., gt=0, description="Target energy in kWh")
+    energie_cible_wh: Optional[float] = Field(None, gt=0, description="Target energy in Wh. Used if tension_cible_v is not provided.")
+    tension_cible_v: Optional[float] = Field(None, gt=0, description="Target voltage in V. Can be used instead of energy.")
     courant_cible_a: float = Field(..., gt=0, description="Target current in A")
     
     # Housing constraints
@@ -89,7 +90,10 @@ class CalculationResult(BaseModel):
     verdict: VerdictEnum = Field(..., description="ACCEPT or REJECT")
     justification: str = Field(..., description="Verdict explanation")
     
-    energie_reelle_kwh: float = Field(..., description="Real energy in kWh")
+    taux_occupation_pct: float = Field(..., description="Current pack volume ratio against housing")
+    marges_reelles: dict = Field(..., description="Real calculated margins in mm {L, W, H}")
+    
+    energie_reelle_wh: float = Field(..., description="Real energy in Wh")
     tension_totale_v: float = Field(..., description="Total voltage in V")
     courant_total_a: float = Field(..., description="Total current in A")
     
