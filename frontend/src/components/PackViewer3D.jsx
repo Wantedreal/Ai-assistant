@@ -2,8 +2,11 @@ import React, { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
-export default function PackViewer3D({ housingL, housingW, housingH, result }) {
+export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false }) {
   const mountRef = useRef(null)
+  const controlsRef = useRef(null)
+  const cameraRef = useRef(null)
+  const sceneRef = useRef(null)
 
   useEffect(() => {
     if (!mountRef.current) return
@@ -24,6 +27,9 @@ export default function PackViewer3D({ housingL, housingW, housingH, result }) {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.1
+
+    sceneRef.current = scene
+    cameraRef.current = camera
 
     // Clear previous canvas if re-running effect
     mountRef.current.innerHTML = ''
@@ -293,6 +299,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result }) {
     controls.dampingFactor = 0.05
     controls.autoRotate = true
     controls.autoRotateSpeed = 1.0
+    controlsRef.current = controls
 
     // ─── 7. Animation Loop ────────────────────────────────────────────────────
     let animationFrameId
@@ -334,11 +341,75 @@ export default function PackViewer3D({ housingL, housingW, housingH, result }) {
     }
   }, [housingL, housingW, housingH, result]) // Re-run if dimensions or result changes
 
+  // Handle camera preset changes
+  useEffect(() => {
+    if (controlsRef.current && cameraRef.current && cameraPreset) {
+      const distance = Math.max(housingL, housingW, housingH) * 1.5
+      const cameraTargets = {
+        front: { pos: new THREE.Vector3(0, distance * 0.5, distance), target: new THREE.Vector3(0, 0, 0) },
+        back: { pos: new THREE.Vector3(0, distance * 0.5, -distance), target: new THREE.Vector3(0, 0, 0) },
+        left: { pos: new THREE.Vector3(-distance, distance * 0.5, 0), target: new THREE.Vector3(0, 0, 0) },
+        right: { pos: new THREE.Vector3(distance, distance * 0.5, 0), target: new THREE.Vector3(0, 0, 0) },
+        top: { pos: new THREE.Vector3(0, distance * 1.5, 0), target: new THREE.Vector3(0, 0, 0) },
+        bottom: { pos: new THREE.Vector3(0, -distance * 0.5, 0), target: new THREE.Vector3(0, 0, 0) },
+        isometric: { pos: new THREE.Vector3(distance * 0.7, distance * 0.7, distance * 0.7), target: new THREE.Vector3(0, 0, 0) },
+        free: { pos: new THREE.Vector3(distance, distance * 0.8, distance), target: new THREE.Vector3(0, 0, 0) }
+      }
+
+      let cameraAnimating = false
+      const animateCameraToPreset = (preset) => {
+        if (cameraAnimating || !cameraTargets[preset]) return
+        
+        const target = cameraTargets[preset]
+        const camera = cameraRef.current
+        const controls = controlsRef.current
+        const startPos = camera.position.clone()
+        const endPos = target.pos
+        const duration = 1000 // milliseconds
+        const startTime = Date.now()
+
+        cameraAnimating = true
+        controls.autoRotate = false
+
+        const animateFrame = () => {
+          const elapsed = Date.now() - startTime
+          const progress = Math.min(elapsed / duration, 1)
+
+          // Ease-out cubic
+          const easeProgress = 1 - Math.pow(1 - progress, 3)
+
+          camera.position.lerpVectors(startPos, endPos, easeProgress)
+          controls.target.copy(target.target)
+          controls.update()
+
+          if (progress < 1) {
+            requestAnimationFrame(animateFrame)
+          } else {
+            cameraAnimating = false
+            controls.autoRotate = preset === 'free' // Re-enable auto-rotate for free mode
+          }
+        }
+
+        animateFrame()
+      }
+
+      animateCameraToPreset(cameraPreset)
+    }
+  }, [cameraPreset, housingL, housingW, housingH])
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div
         ref={mountRef}
-        style={{ width: '100%', height: '100%', minHeight: '300px', borderRadius: 'inherit', overflow: 'hidden' }}
+        onClick={!isFullscreen ? onFullscreenClick : undefined}
+        style={{
+          width: '100%',
+          height: '100%',
+          minHeight: '300px',
+          borderRadius: 'inherit',
+          overflow: 'hidden',
+          cursor: !isFullscreen ? 'pointer' : 'grab'
+        }}
       />
 
       {/* UI Overlay */}
@@ -358,6 +429,23 @@ export default function PackViewer3D({ housingL, housingW, housingH, result }) {
           {result ? 'Housing vs Computed Array' : 'Target Housing Geometry'}
         </div>
       </div>
+
+      {/* Click to Fullscreen Hint */}
+      {!isFullscreen && onFullscreenClick && (
+        <div style={{
+          position: 'absolute',
+          bottom: 16,
+          left: 16,
+          pointerEvents: 'none',
+          color: '#fff',
+          fontSize: '0.75rem',
+          opacity: 0.6,
+          fontStyle: 'italic',
+          textShadow: '0 2px 4px rgba(0,0,0,0.5)'
+        }}>
+          💡 Click to view fullscreen
+        </div>
+      )}
 
       {/* Verdict Overlay */}
       {result && (

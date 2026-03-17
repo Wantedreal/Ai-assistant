@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react'
 import { apiService } from './services/api'
 
 import Header from './components/Header'
 import { CellSelectorCard } from './components/CellSelector'
 import CellActionCard from './components/CellSelector'
 import ConstraintsForm from './components/ConstraintsForm'
-import PackViewer3D from './components/PackViewer3D'
+import PackViewer3DSkeleton from './components/PackViewer3DSkeleton'
 import ResultsPanel from './components/ResultsPanel'
+
+// Lazy load the 3D viewer component (contains heavy Three.js library)
+const PackViewer3D = lazy(() => import('./components/PackViewer3D'))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const toNum = (v, fallback = 0) => {
@@ -31,15 +34,17 @@ export default function App() {
   const [calculating, setCalculating] = useState(false)
   const [calcError, setCalcError]     = useState(null)
   const [result, setResult]           = useState(null)
+  const [fullscreenMode, setFullscreenMode] = useState(false)
+  const [cameraPreset, setCameraPreset] = useState('free')
 
   // Form — keys match CalculationRequest exactly
   const [form, setForm] = useState({
-    energie_cible_wh:   55000,
-    tension_cible_v:    '',
+    energie_cible_wh:   3500,
+    tension_cible_v:    70,
     courant_cible_a:    200,
-    housing_l:          1200,
-    housing_l_small:    900,
-    housing_h:          300,
+    housing_l:          400,
+    housing_l_small:    400,
+    housing_h:          100,
     marge_mm:           15,
     depth_of_discharge: 80,
     config_mode:        'auto',
@@ -52,6 +57,20 @@ export default function App() {
   const handleSelectCell = (id) => {
     setSelectedId(id)
     setResult(null)
+  }
+
+  const handleEnterFullscreen = () => {
+    setFullscreenMode(true)
+    setCameraPreset('isometric')
+  }
+
+  const handleExitFullscreen = () => {
+    setFullscreenMode(false)
+    setCameraPreset('free')
+  }
+
+  const handleCameraPreset = (preset) => {
+    setCameraPreset(preset)
   }
 
   // ── Fetch cell catalogue on mount ──
@@ -200,12 +219,17 @@ export default function App() {
 
           {/* ── RIGHT — 3D Pack visualization ── */}
           <div className="photo-card" aria-label="3D Visualization" style={{ padding: 0 }}>
-            <PackViewer3D
-              housingL={form.housing_l}
-              housingW={form.housing_l_small}
-              housingH={form.housing_h}
-              result={result}
-            />
+            <Suspense fallback={<PackViewer3DSkeleton />}>
+              <PackViewer3D
+                housingL={form.housing_l}
+                housingW={form.housing_l_small}
+                housingH={form.housing_h}
+                result={result}
+                cameraPreset={fullscreenMode ? cameraPreset : 'free'}
+                onFullscreenClick={handleEnterFullscreen}
+                isFullscreen={false}
+              />
+            </Suspense>
           </div>
 
           {/* ── LEFT BOTTOM — Action buttons ── */}
@@ -221,6 +245,134 @@ export default function App() {
 
         </div>
       </main>
+
+      {/* ── Fullscreen 3D Viewer Modal ── */}
+      {fullscreenMode && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#0f0f0f',
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          {/* Header bar with close button */}
+          <div style={{
+            backgroundColor: '#1a1c23',
+            borderBottom: '1px solid #2a2c33',
+            padding: '16px 24px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div>
+              <h2 style={{ margin: '0 0 4px 0', color: '#fff', fontSize: '1.2rem' }}>3D Pack Visualization</h2>
+              <p style={{ margin: 0, color: '#999', fontSize: '0.85rem' }}>Click camera presets to change views</p>
+            </div>
+            <button
+              onClick={handleExitFullscreen}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                fontSize: '1.5rem',
+                cursor: 'pointer',
+                padding: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              title="Exit fullscreen"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Camera preset controls */}
+          <div style={{
+            backgroundColor: '#1a1c23',
+            borderBottom: '1px solid #2a2c33',
+            padding: '12px 24px',
+            display: 'flex',
+            gap: '8px',
+            flexWrap: 'wrap',
+            alignItems: 'center'
+          }}>
+            <span style={{ color: '#999', fontSize: '0.9rem', marginRight: '8px' }}>Camera:</span>
+            {[
+              { label: 'Front', value: 'front' },
+              { label: 'Back', value: 'back' },
+              { label: 'Top', value: 'top' },
+              { label: 'Bottom', value: 'bottom' },
+              { label: 'Left', value: 'left' },
+              { label: 'Right', value: 'right' },
+              { label: 'Isometric', value: 'isometric' },
+              { label: 'Free Orbit', value: 'free' }
+            ].map(preset => (
+              <button
+                key={preset.value}
+                onClick={() => handleCameraPreset(preset.value)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '4px',
+                  border: cameraPreset === preset.value ? '2px solid #3b82f6' : '1px solid #2a2c33',
+                  backgroundColor: cameraPreset === preset.value ? 'rgba(59,130,246,0.2)' : '#2a2c33',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 500,
+                  transition: 'all 0.2s',
+                  hover: { backgroundColor: '#3a3c43' }
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 3D Viewer */}
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <Suspense fallback={<PackViewer3DSkeleton />}>
+              <PackViewer3D
+                housingL={form.housing_l}
+                housingW={form.housing_l_small}
+                housingH={form.housing_h}
+                result={result}
+                cameraPreset={cameraPreset}
+                isFullscreen={true}
+              />
+            </Suspense>
+          </div>
+
+          {/* Footer with return button */}
+          <div style={{
+            backgroundColor: '#1a1c23',
+            borderTop: '1px solid #2a2c33',
+            padding: '16px 24px',
+            display: 'flex',
+            justifyContent: 'flex-end'
+          }}>
+            <button
+              onClick={handleExitFullscreen}
+              style={{
+                padding: '10px 24px',
+                borderRadius: '4px',
+                border: 'none',
+                backgroundColor: '#3b82f6',
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: 600
+              }}
+            >
+              Return to Layout
+            </button>
+          </div>
+        </div>
+      )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
