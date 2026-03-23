@@ -7,6 +7,7 @@ import CellActionCard from './components/CellSelector'
 import ConstraintsForm from './components/ConstraintsForm'
 import PackViewer3DSkeleton from './components/PackViewer3DSkeleton'
 import ResultsPanel from './components/ResultsPanel'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 // Lazy load the 3D viewer component (contains heavy Three.js library)
 const PackViewer3D = lazy(() => import('./components/PackViewer3D'))
@@ -219,17 +220,19 @@ export default function App() {
 
           {/* ── RIGHT — 3D Pack visualization ── */}
           <div className="photo-card" aria-label="3D Visualization" style={{ padding: 0 }}>
-            <Suspense fallback={<PackViewer3DSkeleton />}>
-              <PackViewer3D
-                housingL={form.housing_l}
-                housingW={form.housing_l_small}
-                housingH={form.housing_h}
-                result={result}
-                cameraPreset={fullscreenMode ? cameraPreset : 'free'}
-                onFullscreenClick={handleEnterFullscreen}
-                isFullscreen={false}
-              />
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<PackViewer3DSkeleton />}>
+                <PackViewer3D
+                  housingL={form.housing_l}
+                  housingW={form.housing_l_small}
+                  housingH={form.housing_h}
+                  result={result}
+                  cameraPreset={fullscreenMode ? cameraPreset : 'free'}
+                  onFullscreenClick={handleEnterFullscreen}
+                  isFullscreen={false}
+                />
+              </Suspense>
+            </ErrorBoundary>
           </div>
 
           {/* ── LEFT BOTTOM — Action buttons ── */}
@@ -238,6 +241,8 @@ export default function App() {
             calculating={calculating}
             onCalculate={handleCalculate}
             calcError={calcError}
+            form={form}
+            result={result}
           />
 
           {/* ── BOTTOM ROW — Results ── */}
@@ -335,16 +340,18 @@ export default function App() {
 
           {/* 3D Viewer */}
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            <Suspense fallback={<PackViewer3DSkeleton />}>
-              <PackViewer3D
-                housingL={form.housing_l}
-                housingW={form.housing_l_small}
-                housingH={form.housing_h}
-                result={result}
-                cameraPreset={cameraPreset}
-                isFullscreen={true}
-              />
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<PackViewer3DSkeleton />}>
+                <PackViewer3D
+                  housingL={form.housing_l}
+                  housingW={form.housing_l_small}
+                  housingH={form.housing_h}
+                  result={result}
+                  cameraPreset={cameraPreset}
+                  isFullscreen={true}
+                />
+              </Suspense>
+            </ErrorBoundary>
           </div>
 
           {/* Footer with return button */}

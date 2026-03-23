@@ -1,4 +1,5 @@
 import React from 'react'
+import { apiService } from '../services/api'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (v, unit = '', d = 2) =>
@@ -73,7 +74,44 @@ export function CellSelectorCard({
   )
 }
 
-export default function CellActionCard({ cell, calculating, onCalculate, calcError }) {
+export default function CellActionCard({ cell, calculating, onCalculate, calcError, form, result }) {
+  const handleExportPdf = async () => {
+    if (!result || !cell) {
+      alert('Please calculate the configuration first')
+      return
+    }
+
+    try {
+      const payload = {
+        cell_id: cell.id,
+        energie_cible_wh: form.energie_cible_wh,
+        tension_cible_v: form.tension_cible_v,
+        courant_cible_a: form.courant_cible_a,
+        housing_l: form.housing_l,
+        housing_l_small: form.housing_l_small,
+        housing_h: form.housing_h,
+        marge_mm: form.marge_mm,
+        depth_of_discharge: form.depth_of_discharge,
+        config_mode: form.config_mode,
+      }
+
+      const response = await apiService.generatePdf(payload)
+      
+      // Create a blob and download
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `battery_report_${new Date().toISOString().split('T')[0]}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.parentNode.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('PDF generation failed:', e)
+      alert('Failed to generate PDF: ' + (e.response?.data?.detail || e.message))
+    }
+  }
+
   return (
     <div className="social-card">
       <div className="action-buttons">
@@ -96,7 +134,8 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
           type="button"
           className="modern-btn modern-btn-secondary"
           style={{ width: '100%' }}
-          onClick={() => alert('PDF export — Sprint 5')}
+          disabled={!result}
+          onClick={handleExportPdf}
         >
           Export PDF
         </button>

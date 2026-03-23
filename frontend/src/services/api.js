@@ -1,8 +1,9 @@
 import axios from 'axios'
 
-// Create axios instance with base URL pointing to the proxy
+// Create axios instance with base URL pointing to the backend
+// Use absolute URL to work in both web and Electron contexts
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: 'http://localhost:8000/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -21,6 +22,11 @@ export const apiService = {
   
   // Calculate battery pack specifications
   calculate: (payload) => api.post('/calculate', payload),
+  
+  // Generate PDF report
+  generatePdf: (payload) => api.post('/calculate/pdf', payload, {
+    responseType: 'blob',
+  }),
 }
 
 export default api

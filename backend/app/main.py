@@ -16,6 +16,7 @@ Run:
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -23,6 +24,7 @@ from app.db.database import engine, get_db, init_db
 from app.models.cellule import Cellule
 from app.schemas.battery import CalculationRequest, CalculationResult, CellRead
 from app.core.engine import run_engine
+from app.pdf import generate_pdf_report
 
 # ── Create tables on startup (idempotent — safe to call multiple times) ───────
 init_db()
@@ -180,6 +182,52 @@ def calculate_pack(
     # Execute the deterministic core engine
     result = run_engine(req, cell)
     return result
+
+
+@app.post(
+    "/api/v1/calculate/pdf",
+    tags=["Moteur de Calcul"],
+    summary="Generate PDF report for pack configuration",
+    responses={
+        200: {"description": "PDF file"},
+        404: {"description": "Cell not found"},
+        422: {"description": "Invalid input data"},
+    },
+)
+def generate_report_pdf(
+    req: CalculationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a PDF report for the battery pack calculation.
+    
+    Returns the calculation result with comprehensive details:
+    - Input parameters (housing, energy, current, margins)
+    - Calculated configuration (S/P, dimensions, totals)
+    - Electrical summary (voltage, energy, weight, density)
+    - Verdict (ACCEPT/REJECT) with justification
+    - Page numbers in footer
+    """
+    # Fetch the selected cell
+    cell = db.query(Cellule).filter(Cellule.id == req.cell_id).first()
+    if not cell:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Cell id={req.cell_id} not found in catalogue."
+        )
+    
+    # Execute the calculation
+    result = run_engine(req, cell)
+    
+    # Generate PDF in memory
+    pdf_buffer = generate_pdf_report(req, result, cell)
+    
+    # Return as downloadable PDF
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=battery_report.pdf"}
+    )
 
 
 # ── Root and fallback endpoints ───────────────────────────────────────────────

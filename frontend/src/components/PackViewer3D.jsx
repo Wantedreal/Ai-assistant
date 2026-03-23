@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
@@ -7,33 +7,35 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
   const controlsRef = useRef(null)
   const cameraRef = useRef(null)
   const sceneRef = useRef(null)
+  const [webglError, setWebglError] = useState(null)
 
   useEffect(() => {
     if (!mountRef.current) return
 
-    // ─── 1. Setup Scene, Camera, Renderer ─────────────────────────────────────
-    const width = mountRef.current.clientWidth
-    const height = mountRef.current.clientHeight
+    try {
+      // ─── 1. Setup Scene, Camera, Renderer ─────────────────────────────────────
+      const width = mountRef.current.clientWidth
+      const height = mountRef.current.clientHeight
 
-    const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#1a1c23') // Dark modern background
+      const scene = new THREE.Scene()
+      scene.background = new THREE.Color('#1a1c23') // Dark modern background
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 10000)
+      const camera = new THREE.PerspectiveCamera(45, width / height, 1, 10000)
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" })
-    renderer.setSize(width, height)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.1
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" })
+      renderer.setSize(width, height)
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      renderer.shadowMap.enabled = true
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap
+      renderer.toneMapping = THREE.ACESFilmicToneMapping
+      renderer.toneMappingExposure = 1.1
 
-    sceneRef.current = scene
-    cameraRef.current = camera
+      sceneRef.current = scene
+      cameraRef.current = camera
 
-    // Clear previous canvas if re-running effect
-    mountRef.current.innerHTML = ''
-    mountRef.current.appendChild(renderer.domElement)
+      // Clear previous canvas if re-running effect
+      mountRef.current.innerHTML = ''
+      mountRef.current.appendChild(renderer.domElement)
 
     // ─── 2. Setup Lighting ────────────────────────────────────────────────────
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
@@ -119,7 +121,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
 
     // ─── 4. Add Battery Array (Realistic Individual Cells) ────────────────────
-    if (result && result.cell_used && result.dimensions_array) {
+    if (result && result.cell_used && result.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0) {
       const { nb_serie: S, nb_parallele: P, cell_used, dimensions_array } = result
       const totalCells = S * P
       const type = (cell_used.type_cellule || 'Pouch').toLowerCase()
@@ -332,12 +334,20 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
         mountRef.current.innerHTML = ''
       }
       renderer.dispose()
+      renderer.forceContextLoss()
       // Clean up meshes in group
       housingGroup.children.forEach(child => {
         if (child.geometry) child.geometry.dispose()
         if (child.material) child.material.dispose()
       })
       scene.clear()
+    }
+    } catch (error) {
+      console.error('PackViewer3D error:', error)
+      setWebglError(error.message || 'Failed to initialize 3D viewer')
+      if (mountRef.current) {
+        mountRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1c23;color:#999;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:10px">⚠️</div><div>3D Viewer unavailable</div><div style="font-size:12px;margin-top:8px;color:#666">${error.message}</div></div></div>`
+      }
     }
   }, [housingL, housingW, housingH, result]) // Re-run if dimensions or result changes
 
