@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
+// Detect if we are running inside Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI != null
+
 export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false }) {
   const mountRef = useRef(null)
   const controlsRef = useRef(null)
@@ -22,13 +25,20 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
       const camera = new THREE.PerspectiveCamera(45, width / height, 1, 10000)
 
-      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" })
+      const renderer = new THREE.WebGLRenderer({
+        antialias: !isElectron,
+        powerPreference: isElectron ? 'default' : 'high-performance',
+        failIfMajorPerformanceCaveat: false,
+      })
       renderer.setSize(width, height)
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-      renderer.shadowMap.enabled = true
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap
-      renderer.toneMapping = THREE.ACESFilmicToneMapping
-      renderer.toneMappingExposure = 1.1
+      renderer.setPixelRatio(isElectron ? 1 : Math.min(window.devicePixelRatio, 2))
+
+      if (!isElectron) {
+        renderer.shadowMap.enabled = true
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap
+        renderer.toneMapping = THREE.ACESFilmicToneMapping
+        renderer.toneMappingExposure = 1.1
+      }
 
       sceneRef.current = scene
       cameraRef.current = camera
@@ -47,16 +57,18 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2)
     dirLight.position.set(1000, 2000, 1000)
-    dirLight.castShadow = true
-    dirLight.shadow.mapSize.width = 1024
-    dirLight.shadow.mapSize.height = 1024
-    dirLight.shadow.camera.near = 10
-    dirLight.shadow.camera.far = 5000
-    dirLight.shadow.camera.left = -1000
-    dirLight.shadow.camera.right = 1000
-    dirLight.shadow.camera.top = 1000
-    dirLight.shadow.camera.bottom = -1000
-    dirLight.shadow.bias = -0.0001
+    if (!isElectron) {
+      dirLight.castShadow = true
+      dirLight.shadow.mapSize.width = 1024
+      dirLight.shadow.mapSize.height = 1024
+      dirLight.shadow.camera.near = 10
+      dirLight.shadow.camera.far = 5000
+      dirLight.shadow.camera.left = -1000
+      dirLight.shadow.camera.right = 1000
+      dirLight.shadow.camera.top = 1000
+      dirLight.shadow.camera.bottom = -1000
+      dirLight.shadow.bias = -0.0001
+    }
     scene.add(dirLight)
 
     const pointLight = new THREE.PointLight(0xffffff, 0.5)
@@ -67,17 +79,27 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
     const housingGroup = new THREE.Group()
 
     // Create a frosted glass / acrylic material for the housing body
-    const housingMat = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color('#3b82f6'),
-      transparent: true,
-      opacity: 0.25,
-      roughness: 0.1,
-      transmission: 0.9,
-      thickness: 2.0,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.1,
-      side: THREE.DoubleSide
-    })
+    // Use simpler materials in Electron to avoid GPU shader crashes
+    const housingMat = isElectron
+      ? new THREE.MeshStandardMaterial({
+          color: new THREE.Color('#3b82f6'),
+          transparent: true,
+          opacity: 0.3,
+          roughness: 0.3,
+          metalness: 0.1,
+          side: THREE.DoubleSide,
+        })
+      : new THREE.MeshPhysicalMaterial({
+          color: new THREE.Color('#3b82f6'),
+          transparent: true,
+          opacity: 0.25,
+          roughness: 0.1,
+          transmission: 0.9,
+          thickness: 2.0,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.1,
+          side: THREE.DoubleSide,
+        })
 
     const edgeMat = new THREE.LineBasicMaterial({ color: '#60a5fa', opacity: 0.8, transparent: true })
 
@@ -86,8 +108,10 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       const geom = new THREE.BoxGeometry(w, h, d)
       const mesh = new THREE.Mesh(geom, housingMat)
       mesh.position.set(x, y, z)
-      mesh.castShadow = true
-      mesh.receiveShadow = true
+      if (!isElectron) {
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+      }
 
       const edges = new THREE.EdgesGeometry(geom)
       const lines = new THREE.LineSegments(edges, edgeMat)
@@ -131,14 +155,20 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       const baseBodyColor = ok ? (type === 'cylindrical' ? '#1890ff' : '#bdc3c7') : '#ef4444'
 
       // Material for the plastic/painted body wrapper
-      const bodyMat = new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(baseBodyColor),
-        metalness: type === 'cylindrical' ? 0.3 : 0.8,
-        roughness: type === 'cylindrical' ? 0.2 : 0.15,
-        clearcoat: type === 'cylindrical' ? 1.0 : 0.5,
-        clearcoatRoughness: 0.1,
-        envMapIntensity: 1.0,
-      })
+      const bodyMat = isElectron
+        ? new THREE.MeshStandardMaterial({
+            color: new THREE.Color(baseBodyColor),
+            metalness: type === 'cylindrical' ? 0.3 : 0.7,
+            roughness: type === 'cylindrical' ? 0.3 : 0.2,
+          })
+        : new THREE.MeshPhysicalMaterial({
+            color: new THREE.Color(baseBodyColor),
+            metalness: type === 'cylindrical' ? 0.3 : 0.8,
+            roughness: type === 'cylindrical' ? 0.2 : 0.15,
+            clearcoat: type === 'cylindrical' ? 1.0 : 0.5,
+            clearcoatRoughness: 0.1,
+            envMapIntensity: 1.0,
+          })
 
       // Material for standard aluminum/steel terminals
       const metalMat = new THREE.MeshStandardMaterial({
@@ -206,17 +236,19 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
       // Create Instanced Meshes
       const bodyMesh = new THREE.InstancedMesh(bodyGeom, bodyMat, totalCells)
-      bodyMesh.castShadow = true
-      bodyMesh.receiveShadow = true
+      if (!isElectron) {
+        bodyMesh.castShadow = true
+        bodyMesh.receiveShadow = true
+      }
       
       const term1Mesh = term1Geom ? new THREE.InstancedMesh(term1Geom, metalMat, totalCells) : null
-      if (term1Mesh) {
+      if (term1Mesh && !isElectron) {
         term1Mesh.castShadow = true
         term1Mesh.receiveShadow = true
       }
       
       const term2Mesh = term2Geom ? new THREE.InstancedMesh(term2Geom, copperMat, totalCells) : null
-      if (term2Mesh) {
+      if (term2Mesh && !isElectron) {
         term2Mesh.castShadow = true
         term2Mesh.receiveShadow = true
       }
@@ -283,13 +315,16 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
     // ─── 5. Grid/Floor helper ─────────────────────────────────────────────────
     // ─── 5. Floor shadow receiver ─────────────────────────────────────────────
-    const planeGeom = new THREE.PlaneGeometry(10000, 10000)
-    const planeMat = new THREE.ShadowMaterial({ opacity: 0.4 })
-    const planeMesh = new THREE.Mesh(planeGeom, planeMat)
-    planeMesh.rotation.x = -Math.PI / 2
-    planeMesh.position.y = -housingH / 2 - 1 // Place slightly below housing
-    planeMesh.receiveShadow = true
-    scene.add(planeMesh)
+    if (!isElectron) {
+      // Shadow plane only needed when shadows are enabled
+      const planeGeom = new THREE.PlaneGeometry(10000, 10000)
+      const planeMat = new THREE.ShadowMaterial({ opacity: 0.4 })
+      const planeMesh = new THREE.Mesh(planeGeom, planeMat)
+      planeMesh.rotation.x = -Math.PI / 2
+      planeMesh.position.y = -housingH / 2 - 1
+      planeMesh.receiveShadow = true
+      scene.add(planeMesh)
+    }
 
     // ─── 6. Camera Positioning & Controls ─────────────────────────────────────
     // Calculate a good zoom level based on the housing size

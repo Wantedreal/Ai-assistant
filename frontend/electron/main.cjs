@@ -7,10 +7,11 @@ const { app, BrowserWindow, Menu, dialog } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const http = require('http')
-app.commandLine.appendSwitch('ignore-gpu-blacklist');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-webgl');
+app.commandLine.appendSwitch('use-angle', 'gl');
 app.commandLine.appendSwitch('disable-gpu-sandbox');
-app.commandLine.appendSwitch('disable-feature', 'HardwareMediaKeyHandling');
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
 // Simple isDev check - if app is in unpacked directory it's dev mode
 const isDev = process.env.ELECTRON_DEV === 'true' || process.argv.some(arg => arg === '--dev')
@@ -35,7 +36,8 @@ function getBackendBinaryPath() {
     return null
   }
   
-  const binDir = path.join(path.dirname(app.getPath('exe')), 'backend')
+  // electron-builder places extraResources in process.resourcesPath
+  const binDir = path.join(process.resourcesPath, 'backend')
   const platform = process.platform
   
   let binaryName = 'backend'

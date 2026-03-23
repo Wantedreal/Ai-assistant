@@ -7,75 +7,6 @@ Backend in the \backend : FastAPI + SQLITE + Python, running on localhost:8000.
 Frontend in the \frontend: React  + Vite loaded inside Electron.
 
 ---
-
-## ✅ STEP 1 - PDF REPORT [COMPLETE]
-
-**Status**: Fully implemented and tested ✓
-
-### Implementation Summary:
-- **backend/app/pdf.py** - PDF generation module using ReportLab
-  - Generates PDF with all required sections:
-    - Title and generation date
-    - Input parameters (cell, housing, energy, current, margins, DoD)
-    - Configuration (S/P, dimensions, margins)
-    - Electrical summary (voltage, capacity, energy, weight, density)
-    - Verdict badge (green ACCEPT / red REJECT)
-    - Justification text
-    - Page numbers in footer
-
-- **backend/app/main.py** - New endpoint: `POST /api/v1/calculate/pdf`
-  - Takes same CalculationRequest as /calculate
-  - Returns PDF as downloadable attachment
-  - Integrated with existing calculation engine
-
-- **frontend/src/services/api.js** - PDF export API method
-  - `generatePdf(payload)` - POSTs to /api/v1/calculate/pdf
-
-- **frontend/src/components/CellSelector.jsx** - Export PDF button
-  - Calls API, downloads PDF when results exist
-  - Error handling with user feedback
-
-### Testing:
-- ✅ Direct PDF generation tested: 4,362 bytes generated successfully
-- ✅ All sections render correctly
-- ✅ Backend imports without errors
-- ✅ API endpoint ready to use
-
-### Backend Launch Command:
-```powershell
-cd c:\Users\rmatloub\Desktop\DEV_Projet\Ai-assistant\backend
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt  # if needed
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**API Available at**: http://localhost:8000/docs (Swagger UI)
-
----
-
-## ✅ Step 2 - Electron Desktop App [Encours]
-
-### Implementation Summary:
-- **frontend/electron/main.cjs** - Electron main process (renamed from .js for CommonJS)
-  - Spawns backend binary in production mode (PyInstaller/uvicorn binary)
-  - Polls localhost:8000/health endpoint until 200 response
-  - Timeout: 30 seconds, interval: 1000ms
-  - Kills backend process on app quit (SIGTERM then SIGKILL after 5s)
-  - Opens BrowserWindow when backend is ready
-  - Dev mode: skips binary spawn, assumes backend running elsewhere
-  - Production mode: loads from dist/index.html
-  - Dev mode: loads from http://localhost:5173 (Vite dev server)
-
-- **frontend/electron/preload.js** - IPC preload script
-  - Secure contextBridge for renderer process
-  - Platform info exposure (platform, arch)
-  - Whitelist-based IPC channels for safety
-
-- **frontend/package.json** - Updated dependencies
-  - Added: electron@27.0.0, electron-is-dev@3.0.0, electron-builder@24.6.4
-  - Scripts: dev:electron, electron:dev, electron:build
-  - Main: electron/main.cjs
-
 ### How to run (Development):
 ```powershell
 # Terminal 1: Start backend
@@ -91,6 +22,19 @@ npm run dev
 cd frontend
 $env:ELECTRON_DEV='true'
 npm run dev:electron
+```
+
+### How to build (Production):
+```powershell
+# 1. Build backend binary with PyInstaller
+cd backend
+.\venv\Scripts\Activate.ps1
+pyinstaller --onedir --name backend --add-data "data;data" --paths . app/main.py
+
+# 2. Build frontend + package Electron installer
+cd frontend
+npm run electron:build
+# Output: frontend/release/Battery Pack Designer Setup 1.0.0.exe
 ```
 
 ## Step 3 - Swagger Documentation
@@ -119,3 +63,7 @@ When something breaks, follow this order :
 5. Document lessons learnes in 'AGENTS.md'
 > Don't guess. Don't jump to conclusions. Don't apply workarounds.
 > Try one test at a time. Be methodical
+
+# Tasks
+- Make sure of the production of the app is complete 
+- Tell me about your suggestions for more improving this project
