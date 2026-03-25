@@ -91,7 +91,6 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     # Target Energy formula: N_cellules * Vn * Cap * DoD
     total_energy_wh    = round(total_cells * cell.tension_nominale * cell.capacite_ah, 2)
     usable_energy_wh   = round(total_energy_wh * (req.depth_of_discharge / 100.0), 2)
-    
     total_weight_kg    = round((total_cells * cell.masse_g) / 1000.0, 3)
     energy_density = round(total_energy_wh / total_weight_kg, 2) if total_weight_kg > 0 else 0.0
 
@@ -103,13 +102,14 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     cell_type = (cell.type_cellule or "Pouch").lower()
     
     if cell_type == "cylindrical":
-        diameter = cell.longueur_mm
+        diameter = cell.diameter_mm if cell.diameter_mm else cell.longueur_mm
         L_raw = round(S * diameter, 2)
         W_raw = round(P * diameter, 2)
         H_raw = round(cell.hauteur_mm, 2)
-        L_gonfles = round(S * diameter, 2)
-        W_gonfles = round(P * diameter, 2)
-        H_gonfles = round(cell.hauteur_mm, 2)
+        # Cylindrical swelling: radial expansion (diameter increases) and axial (height)
+        L_gonfles = round(S * diameter * swelling_factor, 2)
+        W_gonfles = round(P * diameter * swelling_factor, 2)
+        H_gonfles = round(cell.hauteur_mm * swelling_factor, 2)
     else: # Pouch and Prismatic
         L_raw = round(S * cell.longueur_mm, 2)
         W_raw = round(P * cell.largeur_mm, 2)
@@ -117,10 +117,18 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         L_gonfles = round(S * cell.longueur_mm * swelling_factor, 2)
         W_gonfles = round(P * cell.largeur_mm  * swelling_factor, 2)
         H_gonfles = round(cell.hauteur_mm, 2) # Keeping H un-swelled for Pouch/Prismatic based on prior setup
-        
-    # Taux d'occupation = (Volume_totale_cellules / Volume_pack) * 100
-    # Volume_totale_cellules = L * l * h * N_cellules
-    vol_cellules = total_cells * (cell.longueur_mm * cell.largeur_mm * cell.hauteur_mm)
+    
+    # Volume calculation based on cell type
+    # Cylindrical: V = pi * r^2 * h (true cylinder volume)
+    # Prismatic/Pouch: V = l * w * h (rectangular prism volume)
+    if cell_type == "cylindrical":
+        radius_mm = diameter / 2.0
+        vol_per_cell = math.pi * (radius_mm ** 2) * cell.hauteur_mm
+    else:
+        vol_per_cell = cell.longueur_mm * cell.largeur_mm * cell.hauteur_mm
+    
+    # Taux d'occupation based on RAW cell volume (before swelling)
+    vol_cellules = total_cells * vol_per_cell
     vol_housing = req.housing_l * req.housing_l_small * req.housing_h
     taux_occupation_pct = round((vol_cellules / vol_housing) * 100.0, 2) if vol_housing > 0 else 0.0
 
@@ -162,12 +170,13 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         )
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STEP 5 — Collision Detection & Maring par cote calculation
-    # Formula: Margin par cote = (Dim_housing - Dim_gonflés) / 2
+    # STEP 5 — Collision Detection & Margin par cote calculation
+    # Margins calculated on RAW dimensions (before swelling) as per spec
+    # Formula: Margin par cote = (Dim_housing - Dim_raw) / 2
     # ══════════════════════════════════════════════════════════════════════════
-    margin_l = round((req.housing_l - L_gonfles) / 2.0, 2)
-    margin_w = round((req.housing_l_small - W_gonfles) / 2.0, 2)
-    margin_h = round((req.housing_h - H_gonfles) / 2.0, 2)
+    margin_l = round((req.housing_l - L_raw) / 2.0, 2)
+    margin_w = round((req.housing_l_small - W_raw) / 2.0, 2)
+    margin_h = round((req.housing_h - H_raw) / 2.0, 2)
     
     marges_reelles = {
         "L": margin_l,
@@ -204,9 +213,9 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         nb_serie=S,
         nb_parallele=P,
         dimensions_array=ArrayDimensions(
-            longueur_mm=L_gonfles,
-            largeur_mm=W_gonfles,
-            hauteur_mm=H_gonfles,
+            longueur_mm=L_raw,
+            largeur_mm=W_raw,
+            hauteur_mm=H_raw,
         ),
         verdict=verdict,
         justification=justification,

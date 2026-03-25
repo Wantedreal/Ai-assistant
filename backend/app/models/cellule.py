@@ -5,22 +5,23 @@ from app.db.database import Base
 
 class Cellule(Base):
     """
-    ORM model for the `cellules` table.
-    Matches the database schema with all battery cell specifications.
-    
-    Columns:
-      - id: Primary key (auto-increment)
-      - nom: Product name/reference (e.g., "INR18650-35E")
-      - longueur_mm: Length in millimeters
-      - largeur_mm: Width in millimeters
-      - hauteur_mm: Height/thickness in millimeters
-      - masse_g: Mass in grams
-      - tension_nominale: Nominal voltage in Volts
-      - capacite_ah: Capacity in Amperes-hour
-      - courant_max_a: Maximum discharge current in Amperes
-      - type_cellule: Cell format (Pouch, Cylindrical, Prismatic)
-      - taux_swelling_pct: Swelling rate percentage
-    """
+ORM model for the `cellules` table.
+Matches the database schema with all battery cell specifications.
+
+Columns:
+  - id: Primary key (auto-increment)
+  - nom: Product name/reference (e.g., "INR18650-35E")
+  - longueur_mm: Length in millimeters
+  - largeur_mm: Width in millimeters
+  - hauteur_mm: Height/thickness in millimeters
+  - masse_g: Mass in grams
+  - tension_nominale: Nominal voltage in Volts
+  - capacite_ah: Capacity in Amperes-hour
+  - courant_max_a: Maximum discharge current in Amperes
+  - type_cellule: Cell format (Pouch, Cylindrical, Prismatic)
+  - taux_swelling_pct: Swelling rate percentage
+  - diameter_mm: Diameter in millimeters (only applicable for cylindrical cells)
+"""
     __tablename__ = "cellules"
 
     id                = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -42,6 +43,7 @@ class Cellule(Base):
     # Geometry & safety
     type_cellule      = Column(String(50), nullable=False, default="Pouch")
     taux_swelling_pct = Column(Float, nullable=False, default=0.08)
+    diameter_mm       = Column(Float, nullable=True)  # Only for cylindrical cells
 
     def __repr__(self) -> str:
         return (

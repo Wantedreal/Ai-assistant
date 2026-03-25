@@ -15,6 +15,7 @@ class CelluleBase(BaseModel):
     courant_max_a: float = Field(..., gt=0)
     type_cellule: str = Field(default="Pouch", max_length=50)
     taux_swelling_pct: float = Field(default=0.08, ge=0)
+    diameter_mm: Optional[float] = Field(default=None)
 
 
 class CelluleCreate(CelluleBase):
@@ -34,6 +35,7 @@ class CelluleUpdate(BaseModel):
     courant_max_a: Optional[float] = None
     type_cellule: Optional[str] = None
     taux_swelling_pct: Optional[float] = None
+    diameter_mm: Optional[float] = None
 
 
 class CelluleResponse(CelluleBase):

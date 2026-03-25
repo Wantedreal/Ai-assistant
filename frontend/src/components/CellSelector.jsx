@@ -1,9 +1,122 @@
-import React from 'react'
+import React, { useState, useMemo, useRef } from 'react'
 import { apiService } from '../services/api'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (v, unit = '', d = 2) =>
   v != null ? `${Number(v).toFixed(d)} ${unit}`.trim() : '—'
+
+function formatDimensions(cell) {
+  if (!cell) return '—'
+  if (cell.type_cellule === 'Cylindrical') {
+    const diameter = cell.diameter_mm || cell.longueur_mm
+    return `Diameter: ${diameter} mm × Height: ${cell.hauteur_mm} mm`
+  }
+  return `${cell.longueur_mm} × ${cell.largeur_mm} × ${cell.hauteur_mm} mm`
+}
+
+function CellSearchSelector({ cells, selectedId, onSelectCell }) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [isOpen, setIsOpen] = useState(false)
+  const inputRef = useRef(null)
+
+  const selectedCell = useMemo(
+    () => cells.find(c => c.id === selectedId),
+    [cells, selectedId]
+  )
+
+  const filteredCells = useMemo(() => {
+    if (!searchTerm.trim()) return cells // Show all cells when no search
+    const term = searchTerm.toLowerCase()
+    return cells.filter(c =>
+      c.nom.toLowerCase().includes(term) ||
+      c.type_cellule.toLowerCase().includes(term)
+    ) // Show all matching results
+  }, [cells, searchTerm])
+
+  const groupedCells = useMemo(() => {
+    const groups = { Cylindrical: [], Prismatic: [], Pouch: [] }
+    filteredCells.forEach(c => {
+      const type = c.type_cellule || 'Other'
+      if (!groups[type]) groups[type] = []
+      groups[type].push(c)
+    })
+    return groups
+  }, [filteredCells])
+
+  const handleSelect = (cellId) => {
+    onSelectCell(cellId)
+    setSearchTerm('')
+    setIsOpen(false)
+  }
+
+  const handleInputChange = (e) => {
+    setSearchTerm(e.target.value)
+    if (!isOpen) setIsOpen(true)
+  }
+
+  const handleFocus = () => {
+    setIsOpen(true)
+  }
+
+  const handleBlur = () => {
+    // Delay blur to allow click on items
+    setTimeout(() => {
+      setIsOpen(false)
+      // Clear search when closing
+      setSearchTerm('')
+    }, 150)
+  }
+
+  return (
+    <div className="cell-search-wrapper">
+      <label className="cell-dropdown-label">Search cell</label>
+      <div className="cell-search-container">
+        <input
+          ref={inputRef}
+          type="text"
+          className="cell-search-input"
+          placeholder={selectedCell ? selectedCell.nom : 'Type to search...'}
+          value={searchTerm}
+          onChange={handleInputChange}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+        />
+        {isOpen && (
+          <div className="cell-search-dropdown">
+            {Object.entries(groupedCells).map(([type, typeCells]) => {
+              if (typeCells.length === 0) return null
+              return (
+                <div key={type} className="cell-search-group">
+                  <div className="cell-search-group-header">{type} ({typeCells.length})</div>
+                  {typeCells.map(c => (
+                    <div
+                      key={c.id}
+                      className={`cell-search-item ${c.id === selectedId ? 'selected' : ''}`}
+                      onMouseDown={(e) => e.preventDefault()} // Prevent blur before click
+                      onClick={() => handleSelect(c.id)}
+                    >
+                      <span className="cell-search-name">{c.nom}</span>
+                      <span className="cell-search-specs">
+                        {c.type_cellule === 'Cylindrical'
+                          ? `${c.diameter_mm || c.longueur_mm}×${c.hauteur_mm}mm`
+                          : `${c.longueur_mm}×${c.largeur_mm}×${c.hauteur_mm}mm`
+                        }
+                        {' | '}{c.capacite_ah}Ah
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+            {filteredCells.length === 0 && (
+              <div className="cell-search-no-results">No cells found</div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export function CellSelectorCard({
   cells,
@@ -19,17 +132,12 @@ export function CellSelectorCard({
           <span className="projects-card__label">Cell Selector</span>
         </div>
 
-        {/* Dropdown */}
-        <div className="cell-dropdown-wrapper">
-          <label className="cell-dropdown-label">Select cell</label>
-          <select
-            className="modern-select"
-            value={selectedId ?? ''}
-            onChange={e => onSelectCell(parseInt(e.target.value, 10))}
-          >
-            {cells.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
-          </select>
-        </div>
+        {/* Search selector */}
+        <CellSearchSelector
+          cells={cells}
+          selectedId={selectedId}
+          onSelectCell={onSelectCell}
+        />
 
         {/* Cell thumbnail */}
         <div className="projects-card__thumb" role="img" aria-label="Cell preview">
@@ -64,7 +172,7 @@ export function CellSelectorCard({
                 {' '}
                 <span className="cell-type-badge">{cell.type_cellule}</span>
               </div>
-              <div>{cell.longueur_mm} × {cell.largeur_mm} × {cell.hauteur_mm} mm</div>
+              <div>{formatDimensions(cell)}</div>
               <div>Swelling: {swellingLabel}</div>
             </div>
           )}
@@ -130,15 +238,18 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
             : 'Calculate'
           }
         </button>
-        <button
-          type="button"
-          className="modern-btn modern-btn-secondary"
-          style={{ width: '100%' }}
-          disabled={!result}
-          onClick={handleExportPdf}
-        >
-          Export PDF
-        </button>
+        {/* COMMENTED OUT FOR DEMO: PDF export button hidden for progress presentation */}
+        {true && (
+          <button
+            type="button"
+            className="modern-btn modern-btn-secondary"
+            style={{ width: '100%' }}
+            disabled={!result}
+            onClick={handleExportPdf}
+          >
+            Export PDF
+          </button>
+        )}
       </div>
 
       {calcError && (

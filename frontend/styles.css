@@ -1083,6 +1083,104 @@ h6 {
   color: var(--color-muted);
 }
 
+/* ============================================================
+   CELL SEARCH SELECTOR
+============================================================ */
+.cell-search-wrapper {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cell-search-container {
+  position: relative;
+}
+
+.cell-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.cell-search-input:focus {
+  border-color: var(--color-primary);
+}
+
+.cell-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  margin-top: 4px;
+}
+
+.cell-search-group {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cell-search-group:last-child {
+  border-bottom: none;
+}
+
+.cell-search-group-header {
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted);
+  background: var(--color-bg);
+  position: sticky;
+  top: 0;
+}
+
+.cell-search-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: background 0.15s;
+}
+
+.cell-search-item:hover {
+  background: var(--color-bg);
+}
+
+.cell-search-item.selected {
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.cell-search-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.cell-search-specs {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.cell-search-no-results {
+  padding: 16px;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
 .cell-specs-wrapper {
   padding: 10px 16px;
 }

@@ -28,7 +28,7 @@ function VerdictBadge({ verdict, justification }) {
           {verdict}
         </span>
       </div>
-      {!ok && (
+      {!ok && justification && (
         <div className="verdict-badge__detail">{justification}</div>
       )}
     </div>
@@ -51,17 +51,8 @@ export default function ResultsPanel({ result, margeMm }) {
         {result ? (
           <>
             <ResultRow label="Configuration"  value={`${result.nb_serie}S / ${result.nb_parallele}P`} highlight />
-            <ResultRow label="Pack voltage"   value={fmt(result.tension_totale_v, 'V')} />
-            <ResultRow label="Pack current"   value={fmt(result.courant_total_a, 'A')} />
-            <ResultRow label="Capacity"       value={fmt(result.electrical.actual_capacity_ah, 'Ah')} />
-            <ResultRow label="Usable energy"  value={fmt(result.electrical.usable_energy_wh, 'Wh')} last />
+            <ResultRow label="Pack voltage"   value={fmt(result.tension_totale_v, 'V')} last />
             <VerdictBadge verdict={result.verdict} justification={result.justification} />
-
-            {result.validation_errors?.length > 0 && (
-              <div className="validation-errors" style={{ marginTop: 12 }}>
-                {result.validation_errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
-              </div>
-            )}
           </>
         ) : (
           <div className="results-placeholder">
@@ -82,13 +73,9 @@ export default function ResultsPanel({ result, margeMm }) {
 
         {result ? (
           <>
-            <ResultRow label="Final L"             value={fmt(result.dimensions_array.longueur_mm, 'mm')} highlight />
-            <ResultRow label="Final W"             value={fmt(result.dimensions_array.largeur_mm,  'mm')} highlight />
-            <ResultRow label="Final H"             value={fmt(result.dimensions_array.hauteur_mm,  'mm')} highlight />
-            <ResultRow label="Raw L (no margin)"   value={fmt(result.dimensions_raw.longueur_mm,   'mm')} />
-            <ResultRow label="Margin / face"       value={fmt(margeMm, 'mm', 0)} last />
-
-            {/* validation_errors are also displayed in Electrical Results */}
+            <ResultRow label="Final L"  value={fmt(result.dimensions_array.longueur_mm, 'mm')} highlight />
+            <ResultRow label="Final W"  value={fmt(result.dimensions_array.largeur_mm,  'mm')} highlight />
+            <ResultRow label="Final H"  value={fmt(result.dimensions_array.hauteur_mm,  'mm')} last />
           </>
         ) : (
           <div className="results-placeholder">

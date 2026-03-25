@@ -11,7 +11,12 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
   const cameraRef = useRef(null)
   const sceneRef = useRef(null)
   const [webglError, setWebglError] = useState(null)
+  const [showPlaceholder, setShowPlaceholder] = useState(true)
 
+  // Check if we have a valid result for cells
+  const hasValidResult = result && result.cell_used && result.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0
+
+  // Always call useEffect - it will handle showing placeholder or 3D scene
   useEffect(() => {
     if (!mountRef.current) return
 
@@ -75,76 +80,76 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
     pointLight.position.set(-1000, 1500, -1000)
     scene.add(pointLight)
 
-    // ─── 3. Add Realistic Housing (Open-top Tray) ─────────────────────────────
-    const housingGroup = new THREE.Group()
-
-    // Create a frosted glass / acrylic material for the housing body
-    // Use simpler materials in Electron to avoid GPU shader crashes
-    const housingMat = isElectron
-      ? new THREE.MeshStandardMaterial({
-          color: new THREE.Color('#3b82f6'),
-          transparent: true,
-          opacity: 0.3,
-          roughness: 0.3,
-          metalness: 0.1,
-          side: THREE.DoubleSide,
-        })
-      : new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color('#3b82f6'),
-          transparent: true,
-          opacity: 0.25,
-          roughness: 0.1,
-          transmission: 0.9,
-          thickness: 2.0,
-          clearcoat: 1.0,
-          clearcoatRoughness: 0.1,
-          side: THREE.DoubleSide,
-        })
-
-    const edgeMat = new THREE.LineBasicMaterial({ color: '#60a5fa', opacity: 0.8, transparent: true })
-
-    // Helper to create a wall with edges
-    const createWall = (w, h, d, x, y, z) => {
-      const geom = new THREE.BoxGeometry(w, h, d)
-      const mesh = new THREE.Mesh(geom, housingMat)
-      mesh.position.set(x, y, z)
-      if (!isElectron) {
-        mesh.castShadow = true
-        mesh.receiveShadow = true
+    // ─── 3. Add Housing Wireframe (Always shown) ─────────────────────────────
+    // Housing wireframe always displays regardless of calculation result
+      const housingGroup = new THREE.Group()
+    
+      // Create a frosted glass / acrylic material for the housing body
+      // Use simpler materials in Electron to avoid GPU shader crashes
+      const housingMat = isElectron
+        ? new THREE.MeshStandardMaterial({
+            color: new THREE.Color('#3b82f6'),
+            transparent: true,
+            opacity: 0.3,
+            roughness: 0.3,
+            metalness: 0.1,
+            side: THREE.DoubleSide,
+          })
+        : new THREE.MeshPhysicalMaterial({
+            color: new THREE.Color('#3b82f6'),
+            transparent: true,
+            opacity: 0.25,
+            roughness: 0.1,
+            transmission: 0.9,
+            thickness: 2.0,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.1,
+            side: THREE.DoubleSide,
+          })
+    
+      const edgeMat = new THREE.LineBasicMaterial({ color: '#60a5fa', opacity: 0.8, transparent: true })
+    
+      // Helper to create a wall with edges
+      const createWall = (w, h, d, x, y, z) => {
+        const geom = new THREE.BoxGeometry(w, h, d)
+        const mesh = new THREE.Mesh(geom, housingMat)
+        mesh.position.set(x, y, z)
+        if (!isElectron) {
+          mesh.castShadow = true
+          mesh.receiveShadow = true
+        }
+    
+        const edges = new THREE.EdgesGeometry(geom)
+        const lines = new THREE.LineSegments(edges, edgeMat)
+        mesh.add(lines)
+        return mesh
       }
-
-      const edges = new THREE.EdgesGeometry(geom)
-      const lines = new THREE.LineSegments(edges, edgeMat)
-      mesh.add(lines)
-      return mesh
-    }
-
-    const wallThickness = 2 // Visual thickness of the tray walls
-
-    // Bottom plate
-    const bottomY = -housingH / 2 + wallThickness / 2
-    housingGroup.add(createWall(housingL, wallThickness, housingW, 0, bottomY, 0))
-
-    // Front & Back walls (along X axis)
-    const fbW = housingL
-    const fbH = (housingH / 2) - wallThickness
-    const fbY = -housingH / 2 + wallThickness + fbH / 2
-    housingGroup.add(createWall(fbW, fbH, wallThickness, 0, fbY, housingW / 2 - wallThickness / 2))
-    housingGroup.add(createWall(fbW, fbH, wallThickness, 0, fbY, -housingW / 2 + wallThickness / 2))
-
-    // Left & Right walls (along Z axis)
-    const lrW = wallThickness
-    const lrH = (housingH / 2) - wallThickness
-    const lrD = housingW - wallThickness * 2
-    const lrY = -housingH / 2 + wallThickness + lrH / 2
-    housingGroup.add(createWall(lrW, lrH, lrD, housingL / 2 - wallThickness / 2, lrY, 0))
-    housingGroup.add(createWall(lrW, lrH, lrD, -housingL / 2 + wallThickness / 2, lrY, 0))
-
-    scene.add(housingGroup)
+    
+      const wallThickness = 2 // Visual thickness of the tray walls
+    
+      // Bottom plate
+      const bottomY = -housingH / 2 + wallThickness / 2
+      housingGroup.add(createWall(housingL, wallThickness, housingW, 0, bottomY, 0))
+    
+      // Front & Back walls (along X axis)
+      const fbW = housingL
+      const fbH = (housingH / 2) - wallThickness
+      const fbY = -housingH / 2 + wallThickness + fbH / 2
+      housingGroup.add(createWall(fbW, fbH, wallThickness, 0, fbY, housingW / 2 - wallThickness / 2))
+      housingGroup.add(createWall(fbW, fbH, wallThickness, 0, fbY, -housingW / 2 + wallThickness / 2))
+    
+      // Left & Right walls (along Z axis)
+      const lrW = wallThickness
+      const lrH = (housingH / 2) - wallThickness
+      const lrD = housingW - wallThickness * 2
+      const lrY = -housingH / 2 + wallThickness + lrH / 2
+      housingGroup.add(createWall(lrW, lrH, lrD, housingL / 2 - wallThickness / 2, lrY, 0))
+      housingGroup.add(createWall(lrW, lrH, lrD, -housingL / 2 + wallThickness / 2, lrY, 0))
+    
+      scene.add(housingGroup)
 
 
-
-    // ─── 4. Add Battery Array (Realistic Individual Cells) ────────────────────
+    // ─── 4. Add Battery Array (Only when result is available) ─────────────────
     if (result && result.cell_used && result.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0) {
       const { nb_serie: S, nb_parallele: P, cell_used, dimensions_array } = result
       const totalCells = S * P
@@ -471,9 +476,36 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
           3D Pack visualization
         </div>
         <div style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: 4 }}>
-          {result ? 'Housing vs Computed Array' : 'Target Housing Geometry'}
+          {hasValidResult ? 'Housing vs Computed Array' : 'Target Housing Geometry'}
         </div>
       </div>
+
+      {/* Placeholder Overlay - shown when no valid result */}
+      {!hasValidResult && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(26,28,35,0.7)',
+          color: '#888',
+          fontSize: '14px',
+          textAlign: 'center',
+          padding: '20px',
+          pointerEvents: 'none'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '12px', opacity: 0.5 }}>📦</div>
+          <div>Calculate a configuration</div>
+          <div style={{ fontSize: '12px', marginTop: '8px', opacity: 0.6 }}>
+            to view the 3D battery pack visualization
+          </div>
+        </div>
+      )}
 
       {/* Click to Fullscreen Hint */}
       {!isFullscreen && onFullscreenClick && (
@@ -493,7 +525,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       )}
 
       {/* Verdict Overlay */}
-      {result && (
+      {hasValidResult && (
         <div style={{
           position: 'absolute',
           bottom: 16,

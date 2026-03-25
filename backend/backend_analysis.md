@@ -80,7 +80,7 @@ total_weight_kg    = round((total_cells * cell.masse_g) / 1000.0, 3)
 ```
 
 ### Step 4: Physical Geometry & Swelling Models
-The physical properties of the pack include a material swelling factor. Stored as a percentage (e.g., 8%) or fraction (0.08).
+The physical properties of the pack include a material swelling factor. It's a field or properties in the backend depend in each cell type.
 
 **Code Implementation for Swelling Factor**:
 ```python
@@ -90,10 +90,6 @@ if swelling_raw > 1.0:
 else:
     swelling_factor = 1.0 + swelling_raw           # fraction
 ```
-
-For **Pouch** and **Prismatic** cells, swelling applies to Length and Width. Height is not stacked.
-For **Cylindrical** cells, swelling is considered 0 due to rigid casings.
-
 **Code Implementation for Dimensions**:
 ```python
 # Example for Pouch cells:
@@ -117,6 +113,3 @@ A pass/fail boolean verdict evaluates whether the calculated array strictly fits
 - ACCEPT if $L_{final} \le Housing_{L}$ and $W_{final} \le Housing_{W}$ and $H_{final} \le Housing_{H}$.
 - REJECT otherwise, providing reasoning indicating exactly which axis suffered an overflow and by how many millimeters.
 
-## 4. Next Steps
-
-Currently, the backend covers all initial mechanical calculation specifications well. As instructed ("We will make changes on the backend but for now do not do nothing"), no active changes have been applied to the backend, yet we are ready to implement further instructions should they be related to endpoints, calculations, or models configuration.
