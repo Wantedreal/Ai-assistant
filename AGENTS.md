@@ -65,5 +65,3 @@ When something breaks, follow this order :
 > Try one test at a time. Be methodical
 
 # WHAT TO DO NOW
-Check for the entire code and for showing the result in the frontend it shows entirely all the results and sometimes that append the bottom cards, and what's the point if we will see all when exporting the pdf so show the necessary also when there's a reject verdict it display 2 times why it's being rejected 
-

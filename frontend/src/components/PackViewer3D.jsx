@@ -499,11 +499,6 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
           padding: '20px',
           pointerEvents: 'none'
         }}>
-          <div style={{ fontSize: '48px', marginBottom: '12px', opacity: 0.5 }}>📦</div>
-          <div>Calculate a configuration</div>
-          <div style={{ fontSize: '12px', marginTop: '8px', opacity: 0.6 }}>
-            to view the 3D battery pack visualization
-          </div>
         </div>
       )}
 
