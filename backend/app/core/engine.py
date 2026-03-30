@@ -95,8 +95,11 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     energy_density = round(total_energy_wh / total_weight_kg, 2) if total_weight_kg > 0 else 0.0
 
     # Dimension gonflés = Dim_cellule * (1 + Taux_gonflement/100)
+    # DB stores swelling as either decimal fraction (0.08 = 8%) or percentage (8.0 = 8%).
+    # Normalise to percentage before applying, using the > 1.0 threshold to distinguish formats.
     swelling_raw = cell.taux_swelling_pct
-    swelling_factor = 1.0 + (swelling_raw / 100.0) if swelling_raw > 1.0 else 1.0 + swelling_raw
+    swelling_pct = swelling_raw if swelling_raw > 1.0 else swelling_raw * 100.0
+    swelling_factor = 1.0 + (swelling_pct / 100.0)
 
     # Apply dimensions based on cell type geometry
     cell_type = (cell.type_cellule or "Pouch").lower()
@@ -111,12 +114,14 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         W_gonfles = round(P * diameter * swelling_factor, 2)
         H_gonfles = round(cell.hauteur_mm * swelling_factor, 2)
     else: # Pouch and Prismatic
-        L_raw = round(S * cell.longueur_mm, 2)
-        W_raw = round(P * cell.largeur_mm, 2)
-        H_raw = round(cell.hauteur_mm, 2)
-        L_gonfles = round(S * cell.longueur_mm * swelling_factor, 2)
-        W_gonfles = round(P * cell.largeur_mm  * swelling_factor, 2)
-        H_gonfles = round(cell.hauteur_mm, 2) # Keeping H un-swelled for Pouch/Prismatic based on prior setup
+        # Cells stand upright: Y = longueur_mm (tall), X = hauteur_mm (thin face), Z = largeur_mm (wide face)
+        # Series stacks in X (thin face to thin face), parallel spreads in Z
+        L_raw = round(S * cell.hauteur_mm, 2)   # pack depth  (X axis, series cells stacked thin)
+        W_raw = round(P * cell.largeur_mm, 2)   # pack width  (Z axis, parallel cells)
+        H_raw = round(cell.longueur_mm, 2)      # pack height (Y axis, cell stands upright)
+        L_gonfles = round(S * cell.hauteur_mm * swelling_factor, 2)
+        W_gonfles = round(P * cell.largeur_mm * swelling_factor, 2)
+        H_gonfles = round(cell.longueur_mm, 2)
     
     # Volume calculation based on cell type
     # Cylindrical: V = pi * r^2 * h (true cylinder volume)
@@ -213,9 +218,9 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         nb_serie=S,
         nb_parallele=P,
         dimensions_array=ArrayDimensions(
-            longueur_mm=L_raw,
-            largeur_mm=W_raw,
-            hauteur_mm=H_raw,
+            longueur_mm=L_gonfles,
+            largeur_mm=W_gonfles,
+            hauteur_mm=H_gonfles,
         ),
         verdict=verdict,
         justification=justification,

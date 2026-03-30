@@ -42,6 +42,7 @@ class CellRead(BaseModel):
     longueur_mm: float
     largeur_mm: float
     hauteur_mm: float
+    diameter_mm: Optional[float] = None
     masse_g: float
     tension_nominale: float
     capacite_ah: float

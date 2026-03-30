@@ -16,6 +16,20 @@ def list_cellules(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
     return cellules
 
 
+@router.get("/stats/count")
+def get_cellule_count(db: Session = Depends(get_db)):
+    """Get total count of cells in database"""
+    count = db.query(Cellule).count()
+    return {"total_cells": count}
+
+
+@router.get("/type/{type_cellule}", response_model=List[CelluleResponse])
+def get_cellules_by_type(type_cellule: str, db: Session = Depends(get_db)):
+    """Get all cells of a specific type (Pouch, Cylindrical, Prismatic)"""
+    cellules = db.query(Cellule).filter(Cellule.type_cellule == type_cellule).all()
+    return cellules
+
+
 @router.get("/{cellule_id}", response_model=CelluleResponse)
 def get_cellule(cellule_id: int, db: Session = Depends(get_db)):
     """Get a specific battery cell by ID"""
@@ -33,17 +47,3 @@ def create_cellule(cellule: CelluleCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_cellule)
     return db_cellule
-
-
-@router.get("/stats/count")
-def get_cellule_count(db: Session = Depends(get_db)):
-    """Get total count of cells in database"""
-    count = db.query(Cellule).count()
-    return {"total_cells": count}
-
-
-@router.get("/type/{type_cellule}", response_model=List[CelluleResponse])
-def get_cellules_by_type(type_cellule: str, db: Session = Depends(get_db)):
-    """Get all cells of a specific type (Pouch, Cylindrical, Prismatic)"""
-    cellules = db.query(Cellule).filter(Cellule.type_cellule == type_cellule).all()
-    return cellules
