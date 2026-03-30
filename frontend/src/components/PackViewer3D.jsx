@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { PackAssemblyBuilder } from '../3d/PackAssemblyBuilder.js'
+import LayerControlPanel from './LayerControlPanel.jsx'
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI != null
 
@@ -9,7 +10,12 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
   const mountRef = useRef(null)
   const controlsRef = useRef(null)
   const cameraRef = useRef(null)
+  const builderRef = useRef(null)
   const [webglError, setWebglError] = useState(null)
+  const [layers, setLayers] = useState({
+    housing: true, cells: true, terminals: true, busbars: true,
+    brackets: true, insulation_cards: true, side_plates: true,
+  })
 
   const hasValidResult = result?.cell_used && result?.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0
 
@@ -87,6 +93,12 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       builder.buildHousing(housingL, housingW, housingH)
       builder.buildCells(housingH, result)
       builder.buildBusbars(housingH, result)
+      builder.buildBracketsAndCards(housingH, result)
+      builder.buildSidePlates(housingH, result)
+      builderRef.current = builder
+
+      // Apply any layer toggles that were set before this rebuild
+      Object.entries(layers).forEach(([name, vis]) => builder.setLayerVisible(name, vis))
 
       // Camera position
       const dist = Math.max(housingL, housingW, housingH) * 1.5
@@ -122,6 +134,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       ro.observe(mountRef.current)
 
       return () => {
+        builderRef.current = null
         cancelAnimationFrame(rafId)
         ro.disconnect()
         controls.dispose()
@@ -184,6 +197,16 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
     frame()
   }, [cameraPreset, housingL, housingW, housingH])
 
+  // ─── Layer sync ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!builderRef.current) return
+    Object.entries(layers).forEach(([name, vis]) => builderRef.current.setLayerVisible(name, vis))
+  }, [layers])
+
+  const handleToggle = useCallback((name, visible) => {
+    setLayers(prev => ({ ...prev, [name]: visible }))
+  }, [])
+
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -196,6 +219,15 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
           cursor: !isFullscreen ? 'pointer' : 'grab',
         }}
       />
+
+      {/* Layer toggle panel (fullscreen only) */}
+      {isFullscreen && hasValidResult && (
+        <LayerControlPanel
+          layers={layers}
+          onToggle={handleToggle}
+          cellType={result?.cell_used?.type_cellule}
+        />
+      )}
 
       {/* Title */}
       <div style={{
