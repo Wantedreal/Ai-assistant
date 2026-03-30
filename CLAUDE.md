@@ -145,7 +145,7 @@ Per AGENTS.md: **reproduce consistently → investigate + form hypothesis → de
 
 See `/reference_3D` for reference images of the target assembly.
 
-**Completed (Phase 0, 1, 2, 3, 4, 7):**
+**Completed (Phase 0, 1, 2, 3, 4,5)
 - Cylindrical cells with alternating polarity, positive/negative terminals, insulation rings, nickel strips
 - Prismatic cells standing upright with terminals and copper busbars (snake-path series routing)
 - Engine dimension fix: prismatic `L/W/H` now matches the 3D axis convention exactly
@@ -155,7 +155,4 @@ See `/reference_3D` for reference images of the target assembly.
 - Layer toggle UI (`LayerControlPanel.jsx`) — fullscreen only, conditional on cell type
 
 **Next phases (cylindrical and prismatic only for now):**
-- BMS, balance wires, main cables (Phase 5)
-- Insulation wrap + heat shrink (Phase 6)
-- Export to GLTF/STL (client-side Three.js) and STEP (backend via CadQuery) (Phase 8, 9)
-- New backend endpoint: `POST /api/v1/export/step`
+Let's go do the fifth phase, See the entire code have an idea then start doing it

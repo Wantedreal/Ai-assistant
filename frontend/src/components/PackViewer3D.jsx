@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { PackAssemblyBuilder } from '../3d/PackAssemblyBuilder.js'
 import LayerControlPanel from './LayerControlPanel.jsx'
+import ExportPanel from './ExportPanel.jsx'
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI != null
 
@@ -12,9 +13,11 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
   const cameraRef = useRef(null)
   const builderRef = useRef(null)
   const [webglError, setWebglError] = useState(null)
+  const [cellGap, setCellGap] = useState(1.5)
   const [layers, setLayers] = useState({
     housing: true, cells: true, terminals: true, busbars: true,
     brackets: true, insulation_cards: true, side_plates: true,
+    bms: true, balance_wires: true, cables: true,
   })
 
   const hasValidResult = result?.cell_used && result?.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0
@@ -90,11 +93,13 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
       // Assembly builder
       const builder = new PackAssemblyBuilder(scene, isElectron)
+      builder.setCellGap(cellGap)
       builder.buildHousing(housingL, housingW, housingH)
       builder.buildCells(housingH, result)
       builder.buildBusbars(housingH, result)
       builder.buildBracketsAndCards(housingH, result)
       builder.buildSidePlates(housingH, result)
+      builder.buildBMS(housingH, result)
       builderRef.current = builder
 
       // Apply any layer toggles that were set before this rebuild
@@ -151,7 +156,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
         mountRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1c23;color:#999;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:10px">⚠️</div><div>3D Viewer unavailable</div><div style="font-size:12px;margin-top:8px;color:#666">${error.message}</div></div></div>`
       }
     }
-  }, [housingL, housingW, housingH, result])
+  }, [housingL, housingW, housingH, result, cellGap])
 
   // ─── Camera preset animation ────────────────────────────────────────────────
   useEffect(() => {
@@ -220,12 +225,19 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
         }}
       />
 
+      {/* Export panel (fullscreen only) */}
+      {isFullscreen && hasValidResult && (
+        <ExportPanel builderRef={builderRef} />
+      )}
+
       {/* Layer toggle panel (fullscreen only) */}
       {isFullscreen && hasValidResult && (
         <LayerControlPanel
           layers={layers}
           onToggle={handleToggle}
           cellType={result?.cell_used?.type_cellule}
+          cellGap={cellGap}
+          onCellGapChange={setCellGap}
         />
       )}
 

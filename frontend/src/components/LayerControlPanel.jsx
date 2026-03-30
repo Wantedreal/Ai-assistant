@@ -18,6 +18,14 @@ const LAYER_GROUPS = [
     ],
   },
   {
+    category: 'ELECTRONICS',
+    items: [
+      { name: 'bms',            label: 'BMS / PCB',      types: ['cylindrical', 'prismatic', 'pouch'] },
+      { name: 'balance_wires',  label: 'Balance Wires',  types: ['cylindrical', 'prismatic', 'pouch'] },
+      { name: 'cables',         label: 'Main Cables',    types: ['cylindrical', 'prismatic', 'pouch'] },
+    ],
+  },
+  {
     category: 'INSULATION',
     items: [
       { name: 'insulation_cards', label: 'Insulation Cards', types: ['prismatic', 'pouch'] },
@@ -35,9 +43,10 @@ const btnStyle = (bg) => ({
  * Overlay panel for toggling 3D layer visibility.
  * Renders only in fullscreen mode; conditionally shows layers based on cell type.
  */
-export default function LayerControlPanel({ layers, onToggle, cellType }) {
+export default function LayerControlPanel({ layers, onToggle, cellType, cellGap, onCellGapChange }) {
   const type = (cellType || '').toLowerCase()
   const allNames = Object.keys(layers)
+  const isCylindrical = type === 'cylindrical'
 
   return (
     <div style={{
@@ -99,6 +108,45 @@ export default function LayerControlPanel({ layers, onToggle, cellType }) {
         <button onClick={() => allNames.forEach(n => onToggle(n, true))}  style={btnStyle('#3b82f6')}>Show all</button>
         <button onClick={() => allNames.forEach(n => onToggle(n, false))} style={btnStyle('#374151')}>Hide all</button>
       </div>
+
+      {/* Cell gap slider */}
+      {onCellGapChange && (
+        <div style={{
+          marginTop: 10,
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          paddingTop: 10,
+        }}>
+          <div style={{
+            fontSize: '0.62rem', color: '#475569',
+            textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6,
+          }}>
+            SETTINGS
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span>Cell Gap</span>
+            <span style={{ color: '#3b82f6', fontWeight: 600 }}>{cellGap.toFixed(1)} mm</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="5"
+            step="0.1"
+            value={cellGap}
+            onChange={e => onCellGapChange(parseFloat(e.target.value))}
+            style={{
+              width: '100%', height: 4, cursor: 'pointer',
+              accentColor: '#3b82f6',
+            }}
+          />
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            fontSize: '0.58rem', color: '#475569', marginTop: 2,
+          }}>
+            <span>0 mm</span>
+            <span>5 mm</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

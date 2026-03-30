@@ -12,6 +12,8 @@ export class PackAssemblyBuilder {
     this.scene = scene
     this.isElectron = isElectron
     this.groups = new Map()
+    /** Gap (mm) between adjacent cells — represents bracket wall / insulation card spacing. */
+    this.cellGap = 1.5
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
@@ -19,6 +21,10 @@ export class PackAssemblyBuilder {
   setLayerVisible(name, visible) {
     const g = this.groups.get(name)
     if (g) g.visible = visible
+  }
+
+  setCellGap(gapMm) {
+    this.cellGap = gapMm
   }
 
   buildHousing(housingL, housingW, housingH) {
@@ -111,6 +117,17 @@ export class PackAssemblyBuilder {
     }
   }
 
+  buildBMS(housingH, result) {
+    if (!result?.cell_used || !result?.dimensions_array || result.nb_serie <= 0 || result.nb_parallele <= 0) return
+
+    const { nb_serie: S, nb_parallele: P, cell_used } = result
+    const isCylindrical = (cell_used.type_cellule || 'Pouch').toLowerCase() === 'cylindrical'
+
+    this._buildBMSBoard(S, P, cell_used, housingH, isCylindrical)
+    this._buildBalanceWires(S, P, cell_used, housingH, isCylindrical)
+    this._buildMainCables(S, P, cell_used, housingH, isCylindrical)
+  }
+
   buildSidePlates(housingH, result) {
     if (!result?.cell_used || !result?.dimensions_array || result.nb_serie <= 0 || result.nb_parallele <= 0) return
 
@@ -122,12 +139,93 @@ export class PackAssemblyBuilder {
     }
   }
 
+  /**
+   * Returns an expanded Group of all currently visible layers for GLB.
+   * Expands InstancedMesh into individual standard Meshes so it renders
+   * accurately in basic 3D viewers that don't support GPU instancing extensions.
+   */
+  getExportGroup() {
+    const root = new THREE.Group()
+    root.name = 'battery_pack'
+    const dummy = new THREE.Matrix4()
+
+    this.groups.forEach(group => {
+      if (!group.visible) return
+      group.updateMatrixWorld(true)
+
+      group.traverse(obj => {
+        if (obj instanceof THREE.InstancedMesh) {
+          for (let i = 0; i < obj.count; i++) {
+            obj.getMatrixAt(i, dummy)
+            const worldMat = new THREE.Matrix4().multiplyMatrices(obj.matrixWorld, dummy)
+            
+            const mesh = new THREE.Mesh(obj.geometry, obj.material)
+            worldMat.decompose(mesh.position, mesh.quaternion, mesh.scale)
+            mesh.name = `${obj.name || 'instance'}_${i}`
+            root.add(mesh)
+          }
+        } else if (obj instanceof THREE.Mesh) {
+          const mesh = new THREE.Mesh(obj.geometry, obj.material)
+          obj.matrixWorld.decompose(mesh.position, mesh.quaternion, mesh.scale)
+          mesh.name = obj.name || 'mesh'
+          root.add(mesh)
+        }
+      })
+    })
+
+    return root
+  }
+
+  /**
+   * Returns a flat Group where every InstancedMesh is expanded into individual
+   * Meshes with world transforms baked directly into the geometry vertices — 
+   * this guarantees flawless STLExporter output without needing scene updates.
+   */
+  getFlatGroupForSTL() {
+    const root = new THREE.Group()
+    root.name = 'battery_pack'
+    const dummy = new THREE.Matrix4()
+
+    this.groups.forEach(group => {
+      if (!group.visible) return
+      // Ensure world matrices are up to date for this group tree
+      group.updateMatrixWorld(true)
+
+      group.traverse(obj => {
+        if (obj instanceof THREE.InstancedMesh) {
+          for (let i = 0; i < obj.count; i++) {
+            obj.getMatrixAt(i, dummy)
+            // Compute final world matrix for this specific instance
+            const worldMat = new THREE.Matrix4().multiplyMatrices(obj.matrixWorld, dummy)
+            
+            // Clone geometry and statically bake the world transform into its vertices
+            const geom = obj.geometry.clone()
+            geom.applyMatrix4(worldMat)
+            
+            const mesh = new THREE.Mesh(geom, obj.material)
+            root.add(mesh)
+          }
+        } else if (obj instanceof THREE.Mesh) {
+          // Normal meshes also need their world coordinates baked for the raw STL
+          const geom = obj.geometry.clone()
+          geom.applyMatrix4(obj.matrixWorld)
+          
+          const mesh = new THREE.Mesh(geom, obj.material)
+          root.add(mesh)
+        }
+      })
+    })
+
+    return root
+  }
+
   dispose() {
     this.groups.forEach(group => {
       this.scene.remove(group)
       this._disposeGroup(group)
     })
     this.groups.clear()
+    this._bmsPos = null
   }
 
   // ─── Private Builders ──────────────────────────────────────────────────────
@@ -136,8 +234,8 @@ export class PackAssemblyBuilder {
     const totalCells = S * P
     const diameter = cell_used.diameter_mm || cell_used.longueur_mm
     const height = cell_used.hauteur_mm
-    const stepX = dimensions_array.longueur_mm / S
-    const stepZ = dimensions_array.largeur_mm / P
+    const stepX = diameter + this.cellGap
+    const stepZ = diameter + this.cellGap
     const wall = 2
 
     // The PVC wrap is the full visible body
@@ -231,87 +329,107 @@ export class PackAssemblyBuilder {
     const totalCells = S * P
     const wall = 2
 
-    // Cell stands upright — wide face (largeur × longueur) faces X direction:
-    //   X = hauteur_mm  — series cells stack along their thickness
-    //   Y = longueur_mm — L is vertical
-    //   Z = largeur_mm  — parallel cells spread left/right in Z
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
     const bodyH = cell_used.longueur_mm * 0.95
 
-    // Derive step from engine-reported dimensions (includes swelling spacing)
-    const stepX = dimensions_array.longueur_mm / S   // series pitch in X
-    const stepZ = dimensions_array.largeur_mm / P    // parallel pitch in Z
-
-    // Terminals on top of the narrow face — offset across sizeZ (largeur_mm)
-    const termW = Math.min(sizeZ * 0.15, 22)
-    const termD = Math.min(sizeX * 0.8, 14)
-    const termH = Math.max(8, cell_used.longueur_mm * 0.07)
+    const stepX = sizeX + this.cellGap
+    const stepZ = sizeZ + this.cellGap
 
     const posOffZ =  sizeZ * 0.22
     const negOffZ = -sizeZ * 0.22
 
+    // Dimensions for highly realistic components
+    const wrapH = bodyH - 2
+    const yCenter = (-housingH / 2) + wall + bodyH / 2
+    const yWrap = (-housingH / 2) + wall + wrapH / 2
+    const yCap  = yWrap + wrapH / 2 + 1     // cap is 2mm thick
+    const termY = yCap + 1                  // top black surface
+
     // Geometries
-    const bodyGeom    = new THREE.BoxGeometry(sizeX, bodyH, sizeZ)
-    const posTermGeom = new THREE.BoxGeometry(termD, termH, termW)
-    const negTermGeom = new THREE.BoxGeometry(termD, termH, termW)
+    const wrapGeom = new THREE.BoxGeometry(sizeX, wrapH, sizeZ)
+    const capGeom  = new THREE.BoxGeometry(sizeX, 2, sizeZ)
+    const ringGeom = new THREE.CylinderGeometry(Math.min(sizeZ * 0.18, 10), Math.min(sizeZ * 0.18, 10), 1.5, 16)
+    const baseGeom = new THREE.CylinderGeometry(Math.min(sizeZ * 0.15, 8), Math.min(sizeZ * 0.15, 8), 2.5, 16)
+    const studGeom = new THREE.CylinderGeometry(2.5, 2.5, 7, 12)
+    const qrGeom   = new THREE.BoxGeometry(8, 0.4, 8)
+    const nutGeom  = new THREE.CylinderGeometry(4, 4, 1.5, 6) // Hex nut
 
     // Materials
     const ok = verdict === 'ACCEPT'
-    const bodyMat = this.isElectron
-      ? new THREE.MeshStandardMaterial({ color: new THREE.Color(ok ? '#1d4ed8' : '#ef4444'), metalness: 0.0, roughness: 0.55 })
-      : new THREE.MeshPhysicalMaterial({ color: new THREE.Color(ok ? '#1d4ed8' : '#ef4444'), metalness: 0.0, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.4 })
-    const posTermMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#d4d4d4'), metalness: 0.8, roughness: 0.25 })
-    const negTermMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#b0b0b0'), metalness: 0.8, roughness: 0.3 })
+    const wrapMat = this.isElectron
+      ? new THREE.MeshStandardMaterial({ color: ok ? '#2563eb' : '#ef4444', metalness: 0.1, roughness: 0.6 })
+      : new THREE.MeshPhysicalMaterial({ color: ok ? '#2563eb' : '#ef4444', metalness: 0.1, roughness: 0.6, clearcoat: 0.5, clearcoatRoughness: 0.3 })
+    const capMat     = new THREE.MeshStandardMaterial({ color: '#171717', metalness: 0.2, roughness: 0.7 })
+    const termMat    = new THREE.MeshStandardMaterial({ color: '#d4d4d4', metalness: 0.8, roughness: 0.25 })
+    const posRingMat = new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.0, roughness: 1.0 }) // Pure White Pos
+    const negRingMat = new THREE.MeshStandardMaterial({ color: '#000000', metalness: 0.0, roughness: 1.0 }) // Pure Black Neg
+    const qrMat      = new THREE.MeshStandardMaterial({ color: '#e5e7eb', metalness: 0.2, roughness: 0.5 })
 
-    const bodyMesh    = new THREE.InstancedMesh(bodyGeom, bodyMat, totalCells)
-    const posTermMesh = new THREE.InstancedMesh(posTermGeom, posTermMat, totalCells)
-    const negTermMesh = new THREE.InstancedMesh(negTermGeom, negTermMat, totalCells)
+    const wrapMesh     = new THREE.InstancedMesh(wrapGeom, wrapMat, totalCells)
+    const capMesh      = new THREE.InstancedMesh(capGeom, capMat, totalCells)
+    const qrMesh       = new THREE.InstancedMesh(qrGeom, qrMat, totalCells)
+    const posRingMesh  = new THREE.InstancedMesh(ringGeom, posRingMat, totalCells)
+    const negRingMesh  = new THREE.InstancedMesh(ringGeom, negRingMat, totalCells)
+    const termBaseMesh = new THREE.InstancedMesh(baseGeom, termMat, totalCells * 2)
+    const termStudMesh = new THREE.InstancedMesh(studGeom, termMat, totalCells * 2)
+    const nutMesh      = new THREE.InstancedMesh(nutGeom, termMat, totalCells * 2)
+
     if (!this.isElectron) {
-      bodyMesh.castShadow = bodyMesh.receiveShadow = true
-      posTermMesh.castShadow = true
-      negTermMesh.castShadow = true
+      wrapMesh.castShadow = wrapMesh.receiveShadow = true
+      termBaseMesh.castShadow = termStudMesh.castShadow = nutMesh.castShadow = true
     }
 
-    // Series (S) stacks into X, Parallel (P) spreads in Z.
     const startX  = -(S * stepX) / 2 + stepX / 2
     const startZ  = -(P * stepZ) / 2 + stepZ / 2
-    const yCenter = (-housingH / 2) + wall + bodyH / 2
-    const termY   = yCenter + bodyH / 2 + termH / 2
 
     const baseEdge = new THREE.EdgesGeometry(new THREE.BoxGeometry(sizeX, bodyH, sizeZ))
     const basePts  = baseEdge.getAttribute('position').array
     const edgePts  = []
 
-    let i = 0
+    let c = 0
+    let t = 0
     for (let s = 0; s < S; s++) {
       const x = startX + s * stepX
-      
       for (let p = 0; p < P; p++) {
         const z = startZ + p * stepZ
-        
-        // Flipped orientation alternates only along series (s) direction.
-        // Parallel rows keep the same orientation so terminals face each other across rows.
         const flipped = s % 2 === 1
-        const actualPosOffZ = flipped ? negOffZ : posOffZ
-        const actualNegOffZ = flipped ? posOffZ : negOffZ
+        const pZ = z + (flipped ? negOffZ : posOffZ)
+        const nZ = z + (flipped ? posOffZ : negOffZ)
 
-        bodyMesh.setMatrixAt(i,    new THREE.Matrix4().makeTranslation(x, yCenter, z))
-        posTermMesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(x, termY, z + actualPosOffZ))
-        negTermMesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(x, termY, z + actualNegOffZ))
+        // Body + Cap
+        wrapMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, yWrap, z))
+        capMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, yCap, z))
+
+        // QR Code
+        qrMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.2, z + posOffZ * 0.5))
+
+        // Insulator Rings (stark contrast)
+        posRingMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.75, pZ))
+        negRingMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.75, nZ))
+
+        // POS Terminal
+        termBaseMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 1.25, pZ))
+        termStudMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 6.0, pZ))
+        nutMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 4.25, pZ))
+        t++
+        
+        // NEG Terminal
+        termBaseMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 1.25, nZ))
+        termStudMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 6.0, nZ))
+        nutMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 4.25, nZ))
+        t++
 
         for (let v = 0; v < basePts.length; v += 3) {
           edgePts.push(basePts[v] + x, basePts[v + 1] + yCenter, basePts[v + 2] + z)
         }
-
-        i++
+        c++
       }
     }
 
-    bodyMesh.instanceMatrix.needsUpdate = true
-    posTermMesh.instanceMatrix.needsUpdate = true
-    negTermMesh.instanceMatrix.needsUpdate = true
-
+    [wrapMesh, capMesh, qrMesh, posRingMesh, negRingMesh, termBaseMesh, termStudMesh, nutMesh].forEach(m => {
+      m.instanceMatrix.needsUpdate = true
+    })
     baseEdge.dispose()
 
     const edgeGeom = new THREE.BufferGeometry()
@@ -321,11 +439,11 @@ export class PackAssemblyBuilder {
 
     const cellGroup = new THREE.Group()
     cellGroup.name = 'cells'
-    cellGroup.add(bodyMesh, edgeLines)
+    cellGroup.add(wrapMesh, capMesh, qrMesh, edgeLines)
 
     const termGroup = new THREE.Group()
     termGroup.name = 'terminals'
-    termGroup.add(posTermMesh, negTermMesh)
+    termGroup.add(posRingMesh, negRingMesh, termBaseMesh, termStudMesh, nutMesh)
 
     this._addGroup('cells', cellGroup)
     this._addGroup('terminals', termGroup)
@@ -334,8 +452,8 @@ export class PackAssemblyBuilder {
   _buildNickelStrips(S, P, cell_used, dimensions_array, housingH) {
     const diameter = cell_used.diameter_mm || cell_used.longueur_mm
     const height   = cell_used.hauteur_mm
-    const stepX    = dimensions_array.longueur_mm / S
-    const stepZ    = dimensions_array.largeur_mm / P
+    const stepX    = diameter + this.cellGap
+    const stepZ    = diameter + this.cellGap
     const wall     = 2
 
     const bodyH = height * 0.96
@@ -418,8 +536,8 @@ export class PackAssemblyBuilder {
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
     const bodyH = cell_used.longueur_mm * 0.95
-    const stepX = dimensions_array.longueur_mm / S
-    const stepZ = dimensions_array.largeur_mm / P
+    const stepX = sizeX + this.cellGap
+    const stepZ = sizeZ + this.cellGap
 
     const termW = Math.min(sizeZ * 0.15, 22)
     const termD = Math.min(sizeX * 0.8, 14)
@@ -429,9 +547,11 @@ export class PackAssemblyBuilder {
     const negOffZ = -sizeZ * 0.22
 
     const yCenter = (-housingH / 2) + wall + bodyH / 2
-    const termY = yCenter + bodyH / 2 + termH / 2
-    const busbarY = termY + termH / 2 + 0.5
+    // The top black surface is at yCenter + bodyH / 2 + 1
+    // The metal base pad sits 1.25mm above that (total offset 2.25)
+    // Busbar is 1mm thick, sits precisely on top of the base pad
     const busbarThickness = 1.0
+    const busbarY = yCenter + bodyH / 2 + 2.25 + busbarThickness / 2
 
     const copperMat = this.isElectron
       ? new THREE.MeshStandardMaterial({ color: '#d97742', metalness: 0.8, roughness: 0.3 })
@@ -532,8 +652,8 @@ export class PackAssemblyBuilder {
   _buildCylindricalBrackets(S, P, cell_used, dimensions_array, housingH) {
     const diameter = cell_used.diameter_mm || cell_used.longueur_mm
     const height   = cell_used.hauteur_mm
-    const stepX    = dimensions_array.longueur_mm / S
-    const stepZ    = dimensions_array.largeur_mm / P
+    const stepX    = diameter + this.cellGap
+    const stepZ    = diameter + this.cellGap
     const wall     = 2
 
     const bodyH   = height * 0.96
@@ -593,10 +713,13 @@ export class PackAssemblyBuilder {
 
     const wall = 2
     const bodyH = cell_used.longueur_mm * 0.95
-    const stepX = dimensions_array.longueur_mm / S
+    const sizeX = cell_used.hauteur_mm
+    const sizeZ = cell_used.largeur_mm
+    const stepX = sizeX + this.cellGap
+    const stepZ = sizeZ + this.cellGap
     const startX = -(S * stepX) / 2 + stepX / 2
     const yCenter = (-housingH / 2) + wall + bodyH / 2
-    const cardW = dimensions_array.largeur_mm
+    const cardW = P * stepZ
 
     const geom = new THREE.BoxGeometry(0.3, bodyH, cardW)
     const mat = new THREE.MeshStandardMaterial({ color: '#f97316', metalness: 0.0, roughness: 0.9 })
@@ -618,8 +741,12 @@ export class PackAssemblyBuilder {
     const wall = 2
     const bodyH = cell_used.longueur_mm * 0.95
     const yCenter = (-housingH / 2) + wall + bodyH / 2
-    const totalX = dimensions_array.longueur_mm
-    const totalZ = dimensions_array.largeur_mm
+    const sizeX = cell_used.hauteur_mm
+    const sizeZ = cell_used.largeur_mm
+    const stepX = sizeX + this.cellGap
+    const stepZ = sizeZ + this.cellGap
+    const totalX = S * stepX
+    const totalZ = P * stepZ
 
     const mat = new THREE.MeshStandardMaterial({ color: '#6b7280', metalness: 0.4, roughness: 0.6 })
 
@@ -645,6 +772,307 @@ export class PackAssemblyBuilder {
     group.add(ePlus, eMinus)
 
     this._addGroup('side_plates', group)
+  }
+
+  _buildBMSBoard(S, P, cell_used, housingH, isCylindrical) {
+    const wall = 2
+    let yCenter, totalX, totalZ
+
+    if (isCylindrical) {
+      const diameter = cell_used.diameter_mm || cell_used.longueur_mm
+      const stepX = diameter + this.cellGap
+      const stepZ = diameter + this.cellGap
+      const bodyH = cell_used.hauteur_mm * 0.96
+      yCenter = (-housingH / 2) + wall + bodyH / 2
+      totalX = S * stepX
+      totalZ = P * stepZ
+    } else {
+      const sizeX = cell_used.hauteur_mm
+      const sizeZ = cell_used.largeur_mm
+      const bodyH = cell_used.longueur_mm * 0.95
+      const stepX = sizeX + this.cellGap
+      const stepZ = sizeZ + this.cellGap
+      yCenter = (-housingH / 2) + wall + bodyH / 2
+      totalX = S * stepX
+      totalZ = P * stepZ
+    }
+
+    // Daly-style Heatsink BMS - length scales with Series count to accommodate pins
+    const bmsL     = Math.max(80, S * 8 + 30)
+    const bmsW     = 50
+    const bmsThick = 15
+
+    // Mount vertically on the front face (+Z side)
+    const bmsX = 0
+    const bmsY = yCenter
+    const bmsZ = totalZ / 2 + bmsThick / 2 + 1
+
+    const group = new THREE.Group()
+    group.name = 'bms'
+
+    // Red aluminum heatsink body
+    const redMat = new THREE.MeshStandardMaterial({ color: '#dc2626', metalness: 0.6, roughness: 0.4 })
+    const bodyGeom = new THREE.BoxGeometry(bmsL - 10, bmsW, bmsThick)
+    const body = new THREE.Mesh(bodyGeom, redMat)
+    body.position.set(bmsX, bmsY, bmsZ)
+    group.add(body)
+
+    // Black plastic endcaps
+    const blackMat = new THREE.MeshStandardMaterial({ color: '#111827', metalness: 0.1, roughness: 0.8 })
+    const capGeom = new THREE.BoxGeometry(5, bmsW, bmsThick)
+    
+    const leftCap = new THREE.Mesh(capGeom, blackMat)
+    leftCap.position.set(bmsX - bmsL / 2 + 2.5, bmsY, bmsZ)
+    group.add(leftCap)
+
+    const rightCap = new THREE.Mesh(capGeom, blackMat)
+    rightCap.position.set(bmsX + bmsL / 2 - 2.5, bmsY, bmsZ)
+    group.add(rightCap)
+
+    // Dynamic S+1 Balance Pins along the top edge
+    const brassMat = new THREE.MeshStandardMaterial({ color: '#d97706', metalness: 0.8, roughness: 0.2 })
+    const pinGeom = new THREE.CylinderGeometry(0.8, 0.8, 3, 8)
+    const topPins = []
+    
+    const pinStartX = bmsX - bmsL / 2 + 15
+    const pinEndX   = bmsX + bmsL / 2 - 15
+    for (let i = 0; i <= S; i++) {
+        // distribute from left to right equally
+        const px = pinStartX + (S === 0 ? 0 : (i / S) * (pinEndX - pinStartX))
+        const py = bmsY + bmsW / 2 + 1.5
+        const pz = bmsZ
+        const pin = new THREE.Mesh(pinGeom, brassMat)
+        pin.position.set(px, py, pz)
+        group.add(pin)
+        topPins.push(new THREE.Vector3(px, py, pz))
+    }
+
+    // Power Ports on the Left Edge
+    const portGeom = new THREE.CylinderGeometry(2, 2, 4, 12)
+    
+    // C- (Charge Port, Top)
+    const portC = new THREE.Mesh(portGeom, brassMat)
+    portC.rotation.z = Math.PI / 2
+    portC.position.set(bmsX - bmsL / 2 - 2, bmsY + 15, bmsZ)
+    group.add(portC)
+
+    // B- (Battery Power, Middle)
+    const portB = new THREE.Mesh(portGeom, brassMat)
+    portB.rotation.z = Math.PI / 2
+    portB.position.set(bmsX - bmsL / 2 - 2, bmsY, bmsZ)
+    group.add(portB)
+
+    // P- (Load Power, Bottom)
+    const portP = new THREE.Mesh(portGeom, brassMat)
+    portP.rotation.z = Math.PI / 2
+    portP.position.set(bmsX - bmsL / 2 - 2, bmsY - 15, bmsZ)
+    group.add(portP)
+
+    // Store BMS positions for precise wire routing
+    this._bmsPos = {
+      bmsX, bmsY, bmsL, bmsZ,
+      topPins,
+      portC: new THREE.Vector3(bmsX - bmsL / 2 - 4, bmsY + 15, bmsZ),
+      portB: new THREE.Vector3(bmsX - bmsL / 2 - 4, bmsY,      bmsZ),
+      portP: new THREE.Vector3(bmsX - bmsL / 2 - 4, bmsY - 15, bmsZ),
+    }
+
+    this._addGroup('bms', group)
+  }
+
+  _buildBalanceWires(S, P, cell_used, housingH, isCylindrical) {
+    if (!this._bmsPos) return
+
+    const { topPins } = this._bmsPos
+    const wall = 2
+    const wireR = 0.35
+    const group = new THREE.Group()
+    group.name = 'balance_wires'
+
+    let startX, startZ, stepX, stepZ, yTop, yBottom, packFrontZ
+
+    if (isCylindrical) {
+      const diameter = cell_used.diameter_mm || cell_used.longueur_mm
+      stepX = diameter + this.cellGap
+      stepZ = stepX
+      const bodyH = cell_used.hauteur_mm * 0.96
+      const yCenter = (-housingH / 2) + wall + bodyH / 2
+      yTop       = yCenter + bodyH / 2 + 1.2
+      yBottom    = yCenter - bodyH / 2 - 0.6
+      startX     = -(S * stepX) / 2 + stepX / 2
+      startZ     = 0
+      packFrontZ = (P * stepZ) / 2
+    } else {
+      const sizeX = cell_used.hauteur_mm
+      const sizeZ = cell_used.largeur_mm
+      const bodyH = cell_used.longueur_mm * 0.95
+      const termH = Math.max(8, cell_used.longueur_mm * 0.07)
+      stepX = sizeX + this.cellGap
+      stepZ = sizeZ + this.cellGap
+      const yCenter = (-housingH / 2) + wall + bodyH / 2
+      yTop       = yCenter + bodyH / 2 + termH + 2.5
+      yBottom    = yTop
+      startX     = -(S * stepX) / 2 + stepX / 2
+      startZ     = -(P * stepZ) / 2 + stepZ / 2
+      packFrontZ = (P * stepZ) / 2
+    }
+
+    // Horizontal harness plane: wires rise to this Y, travel to the BMS front face, then fan to pins
+    const harnessY = yTop + 14
+
+    for (let i = 0; i <= S; i++) {
+      const color = i === 0 ? '#111827' : '#ef4444'
+
+      let tapX, tapZ, tapY
+      if (isCylindrical) {
+        tapX = i === 0 ? startX : startX + (i - 1) * stepX
+        tapY = (i === 0 || (i - 1) % 2 === 0) ? yTop : yBottom
+        tapZ = startZ
+        // Wire 0 is pack−, always at the bottom of the first column
+        if (i === 0) tapY = yBottom
+      } else {
+        const posOffZ =  cell_used.largeur_mm * 0.22
+        const negOffZ = -cell_used.largeur_mm * 0.22
+        tapY = yTop
+        tapX = i === 0 ? startX : startX + (i - 1) * stepX
+        tapZ = i === 0 ? startZ + negOffZ
+                       : startZ + ((i - 1) % 2 === 1 ? negOffZ : posOffZ)
+      }
+
+      const pin = topPins[i]
+      const points = [
+        new THREE.Vector3(tapX,  tapY,        tapZ),        // at terminal tap
+        new THREE.Vector3(tapX,  harnessY,    tapZ),        // rise straight up
+        new THREE.Vector3(tapX,  harnessY,    packFrontZ),  // sweep to front edge of pack
+        new THREE.Vector3(pin.x, harnessY,    pin.z),       // align to pin X at harness level
+        new THREE.Vector3(pin.x, pin.y + 4,   pin.z),       // descend toward pin
+        new THREE.Vector3(pin.x, pin.y,       pin.z),       // arrive at pin
+      ]
+
+      const wireMat = new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.7 })
+      group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 28, wireR, 8, false), wireMat))
+    }
+
+    this._addGroup('balance_wires', group)
+  }
+
+  _buildMainCables(S, P, cell_used, housingH, isCylindrical) {
+    if (!this._bmsPos) return
+
+    const { portC, portB, portP, bmsX, bmsY, bmsL, bmsZ } = this._bmsPos
+    const wall = 2
+    const cableR = 2.5
+
+    let packPlus, packMinus, packTop
+
+    if (isCylindrical) {
+      const diameter = cell_used.diameter_mm || cell_used.longueur_mm
+      const stepX    = diameter + this.cellGap
+      const bodyH    = cell_used.hauteur_mm * 0.96
+      const yCenter  = (-housingH / 2) + wall + bodyH / 2
+      packTop        = yCenter + bodyH / 2 + 1.2
+      const yBottom  = yCenter - bodyH / 2 - 0.6
+      const firstX   = -(S * stepX) / 2 + stepX / 2
+      const lastX    = firstX + (S - 1) * stepX
+      const lastFlipped = (S - 1) % 2 === 1
+      packPlus  = new THREE.Vector3(lastX,  lastFlipped ? yBottom : packTop, 0)
+      packMinus = new THREE.Vector3(firstX, yBottom, 0)
+    } else {
+      const sizeX = cell_used.hauteur_mm
+      const sizeZ = cell_used.largeur_mm
+      const stepX = sizeX + this.cellGap
+      const stepZ = sizeZ + this.cellGap
+      const bodyH = cell_used.longueur_mm * 0.95
+      const termH = Math.max(8, cell_used.longueur_mm * 0.07)
+      const yCenter = (-housingH / 2) + wall + bodyH / 2
+      packTop = yCenter + bodyH / 2 + termH + 2.5
+      const startX  = -(S * stepX) / 2 + stepX / 2
+      const startZ  = -(P * stepZ) / 2 + stepZ / 2
+      const posOffZ = sizeZ * 0.22
+      const negOffZ = -sizeZ * 0.22
+      const lastFlipped = (S - 1) % 2 === 1
+      packMinus = new THREE.Vector3(startX,                    packTop, startZ + negOffZ)
+      packPlus  = new THREE.Vector3(startX + (S - 1) * stepX, packTop, startZ + (lastFlipped ? negOffZ : posOffZ))
+    }
+
+    const group = new THREE.Group()
+    group.name = 'cables'
+
+    const redMat    = new THREE.MeshStandardMaterial({ color: '#dc2626', metalness: 0.15, roughness: 0.6 })
+    const blackMat  = new THREE.MeshStandardMaterial({ color: '#111111', metalness: 0.1,  roughness: 0.7 })
+    const orangeMat = new THREE.MeshStandardMaterial({ color: '#cc4400', metalness: 0.1,  roughness: 0.7 })
+    const blueMat   = new THREE.MeshStandardMaterial({ color: '#1d4ed8', metalness: 0.1,  roughness: 0.7 })
+    const brassMat  = new THREE.MeshStandardMaterial({ color: '#b45309', metalness: 0.85, roughness: 0.2 })
+
+    // Common routing plane well above the pack
+    const abovePack = packTop + 20
+    // Output terminals bolted on the right side of the BMS (load+ and load-)
+    const rightX      = bmsX + bmsL / 2 + 12
+    const outLoad     = new THREE.Vector3(rightX, bmsY + 18, bmsZ)
+    const outCharger  = new THREE.Vector3(rightX, bmsY - 18, bmsZ)
+
+    // ─── Brass output bolt terminals ────────────────────────────────────────
+    const boltGeom = new THREE.CylinderGeometry(4, 4, 6, 12)
+    ;[outLoad, outCharger].forEach(pos => {
+      const bolt = new THREE.Mesh(boltGeom, brassMat)
+      bolt.position.copy(pos)
+      bolt.rotation.z = Math.PI / 2
+      group.add(bolt)
+    })
+
+    // ─── Cable + lug helper ─────────────────────────────────────────────────
+    const addCable = (pts, mat) => {
+      group.add(new THREE.Mesh(
+        new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, cableR, 8, false), mat
+      ))
+    }
+    const addLug = (pos, mat) => {
+      const lug = new THREE.Mesh(new THREE.CylinderGeometry(cableR * 1.9, cableR * 1.9, 4, 10), mat)
+      lug.position.copy(pos)
+      group.add(lug)
+    }
+
+    // 1. B+ (Red): pack+ → above pack → output load terminal (positive bypasses BMS)
+    addCable([
+      packPlus,
+      new THREE.Vector3(packPlus.x, abovePack, packPlus.z),
+      new THREE.Vector3(outLoad.x,  abovePack, outLoad.z),
+      outLoad,
+    ], redMat)
+    addLug(packPlus, redMat)
+    addLug(outLoad,  redMat)
+
+    // 2. B- (Black): pack− → rise above → travel to BMS portB (left edge)
+    addCable([
+      packMinus,
+      new THREE.Vector3(packMinus.x, abovePack,     packMinus.z),
+      new THREE.Vector3(portB.x + 5, abovePack,     portB.z),
+      new THREE.Vector3(portB.x + 5, portB.y + 12,  portB.z),
+      portB,
+    ], blackMat)
+    addLug(packMinus, blackMat)
+    addLug(portB,     blackMat)
+
+    // 3. P- (Orange): BMS portP → output load terminal (switched negative for load)
+    addCable([
+      portP,
+      new THREE.Vector3(portP.x + 15,   portP.y,      portP.z),
+      new THREE.Vector3(outLoad.x - 5,  portP.y + 15, outLoad.z),
+      outLoad,
+    ], orangeMat)
+    addLug(portP, orangeMat)
+
+    // 4. C- (Blue): BMS portC → charger output terminal
+    addCable([
+      portC,
+      new THREE.Vector3(portC.x + 15,      portC.y,      portC.z),
+      new THREE.Vector3(outCharger.x - 5,  portC.y - 10, outCharger.z),
+      outCharger,
+    ], blueMat)
+    addLug(portC,      blueMat)
+    addLug(outCharger, blueMat)
+
+    this._addGroup('cables', group)
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
