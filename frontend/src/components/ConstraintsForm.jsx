@@ -47,6 +47,7 @@ export default function ConstraintsForm({ form, onFieldChange }) {
             <InputRow label="Width l"  unit="mm" value={form.housing_l_small} onChange={set('housing_l_small')} min={1} />
             <InputRow label="Height h" unit="mm" value={form.housing_h}       onChange={set('housing_h')}       min={1} />
             <InputRow label="Margin"   unit="mm" value={form.marge_mm}        onChange={set('marge_mm')}        min={0} />
+            <InputRow label="Cell gap" unit="mm" value={form.cell_gap_mm}     onChange={set('cell_gap_mm')}     min={0} step={0.1} />
           </div>
         </div>
 

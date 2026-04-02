@@ -81,22 +81,38 @@ The UI is a "bento grid":
 - **Top-left:** `CellSelector.jsx` — searchable dropdown over 384 cells
 - **Center:** `ConstraintsForm.jsx` — housing dimensions + energy/current/voltage targets
 - **Top-right:** `PackViewer3D.jsx` — Three.js 3D visualization (WebGL), delegates to `PackAssemblyBuilder.js`
-- **Bottom:** `ResultsPanel.jsx` — S×P config, dimensions, verdict
+- **Bottom-left:** `CellSelector.jsx` (`CellActionCard`) — Calculate + Export PDF buttons + inline ACCEPT/REJECT verdict line
+- **Bottom-center:** `ResultsPanel.jsx` (`bio-card`) — Electrical results with scroll (Configuration, Total cells, Pack voltage, Pack current, Usable energy, Total weight)
+- **Bottom-right:** `ResultsPanel.jsx` (`contact-card`) — Mechanical results with scroll (Final L/W/H, Margin L/W/H, Fill ratio)
 
 ### 3D Visualization (`frontend/src/3d/PackAssemblyBuilder.js`)
 
 Builds the scene in named `THREE.Group` layers (toggle with `setLayerVisible`):
 
-| Layer | Contents |
-|-------|----------|
-| `housing` | Transparent blue enclosure walls |
-| `cells` | Instanced cell bodies + edge outlines |
-| `terminals` | Positive/negative terminal geometry |
-| `busbars` | Nickel strips (cylindrical) or copper busbars (prismatic) |
+| Layer | Group name | Contents | Cell types |
+|-------|-----------|----------|------------|
+| Housing | `housing` | Transparent blue enclosure walls (open-top tray) | All |
+| Cells | `cells` | Instanced cell bodies + edge outlines | All |
+| Terminals | `terminals` | Positive/negative terminal geometry | All |
+| Busbars | `busbars` | Nickel strips + series jumpers (cyl) or copper snake-path busbars (prismatic) | All |
+| Brackets | `brackets` | ABS plastic cross-bar grid top+bottom | Cylindrical only |
+| Insulation cards | `insulation_cards` | Orange Nomex sheets between series groups | Prismatic/Pouch |
+| Side plates | `side_plates` | Steel compression plates (side + end) | Prismatic/Pouch |
+| BMS | `bms` | Daly-style red aluminium heatsink PCB with balance pins and 3 power ports (B−/C−/P−) | All |
+| Balance wires | `balance_wires` | S+1 wires: 1 black (pack−) + S red, routed via harness plane to BMS pins | All |
+| Cables | `cables` | B+ red, B− black, P− orange, C− blue thick cables + brass output bolt terminals | All |
 
-**Cylindrical axis convention** — cells stand upright (Y = `hauteur_mm`), series spreads in X with pitch = `diameter_mm`, parallel spreads in Z with pitch = `diameter_mm`. Adjacent series columns alternate polarity (flip 180°).
+**Module-level constants** (change once, affect all builders):
+- `WALL_MM = 2` — housing wall thickness used in every `yCenter` calculation
+- `TERM_OFFSET_RATIO = 0.22` — prismatic terminal Z-offset as fraction of cell width
 
-**Prismatic/Pouch axis convention** — cells stand upright (Y = `longueur_mm`), series stacks thin-face-to-thin-face in X with pitch = `hauteur_mm`, parallel spreads in Z with pitch = `largeur_mm`.
+**Cylindrical axis convention** — cells stand upright (Y = `hauteur_mm`), series spreads in X with pitch = `diameter_mm + cellGap`, parallel spreads in Z. Adjacent series columns alternate polarity (flip 180° around Z-axis).
+
+**Prismatic/Pouch axis convention** — cells stand upright (Y = `longueur_mm`), series stacks thin-face-to-thin-face in X with pitch = `hauteur_mm + cellGap`, parallel spreads in Z with pitch = `largeur_mm + cellGap`. Terminal Z-offset = `largeur_mm × TERM_OFFSET_RATIO`.
+
+**Export methods:**
+- `getExportGroup()` — deep-clones all visible layers into a root Group; InstancedMesh preserved for GLB
+- `getFlatGroupForSTL()` — expands every InstancedMesh instance into individual Meshes with world transforms baked into geometry vertices; cloned geometries must be disposed after export (handled in `ExportPanel.jsx`)
 
 ## Cell Data Model
 
@@ -145,14 +161,37 @@ Per AGENTS.md: **reproduce consistently → investigate + form hypothesis → de
 
 See `/reference_3D` for reference images of the target assembly.
 
-**Completed (Phase 0, 1, 2, 3, 4,5)
+**Completed (Phases 0, 1, 2, 3, 4, 5, 7, 8 + code quality pass + PDF report + layout fixes):**
 - Cylindrical cells with alternating polarity, positive/negative terminals, insulation rings, nickel strips
 - Prismatic cells standing upright with terminals and copper busbars (snake-path series routing)
 - Engine dimension fix: prismatic `L/W/H` now matches the 3D axis convention exactly
-- Cylindrical cell brackets (perforated ABS plates top+bottom via ExtrudeGeometry with holes)
-- Prismatic insulation cards (orange Nomex sheets between series groups)
-- Prismatic side/end compression plates (steel gray)
+- Cylindrical cell brackets (perforated ABS plates top+bottom via `ExtrudeGeometry` with holes)
+- Prismatic insulation cards (orange Nomex sheets between series groups) — converted to `InstancedMesh`
+- Prismatic side/end compression plates (steel gray) — flush against outermost cells (no phantom gap)
 - Layer toggle UI (`LayerControlPanel.jsx`) — fullscreen only, conditional on cell type
+- BMS (Daly-style): red aluminum heatsink, black endcaps, dynamic S+1 balance pins, B−/C−/P− brass power ports
+- Balance wires: harness-style routing — rise to common Y plane, sweep to BMS front face, fan to individual pins
+- Main cables: B+ red, B− black, P− orange (load), C− blue (charger) with brass bolt terminals
+- Frontend GLB/STL export (`ExportPanel.jsx`): `getExportGroup()` expands `InstancedMesh` for GLTF; `getFlatGroupForSTL()` bakes world transforms for binary STL
+- Code quality fixes: module constants `WALL_MM`, `TERM_OFFSET_RATIO`; removed dead `dimensions_array` param; fixed GPU memory leak on STL export; fixed RAF cleanup in camera preset animation
+- Cell gap (`cell_gap_mm`): lifted to `App.jsx` form state, sent to backend engine (dimensions include (N-1)×gap), shown in ConstraintsForm under Housing dimensions
+- Prismatic terminal size fix: radius now constrained by cell thickness (`sizeX`) so terminals never overflow the cell face
+- PDF report (`backend/app/pdf.py`): full professional report — input params, cell specs, step-by-step methodology with Relation/A.N./Result blocks, top-down vector pack schematic, results + color-coded margins + verdict. Manual mode correctly bypasses formula derivation. PDF payload in `CellSelector.jsx` now includes `cell_gap_mm` and manual S/P fields.
+- Dashboard layout fixes (Steps 1–3): action card no longer has dead space (`align-self: stretch; justify-content: center`); bottom cards equal height via `align-items: stretch`; upper cards capped to viewport with `height: 100vh` + `grid-template-rows: 2.4fr 1fr` at desktop breakpoints.
+- Results panel expanded: Electrical card shows Configuration, Total cells, Pack voltage, Pack current, Usable energy, Total weight — all in a scrollable inner area (`results-scroll-area`). Mechanical card shows Final L/W/H, Margin L/W/H, Fill ratio — also scrollable. Cards have `max-height` at small/medium breakpoints to prevent unbounded growth.
+- Verdict moved to `CellActionCard` (`social-card`) as a compact inline colored text line (✓ ACCEPT / ✗ REJECT — reason), shown immediately after Calculate.
+- `projects-card` overflow changed from `hidden` → `overflow-y: auto` so cell selector content scrolls on small windows.
 
-**Next phases (cylindrical and prismatic only for now):**
-Let's go do the fifth phase, See the entire code have an idea then start doing it
+**uncompleted:**
+- **Phase 6** — EVA foam insulation wrap + heat shrink sleeve over cell array (cylindrical and prismatic)
+- **Phase 9** — Backend STEP export via CadQuery: new endpoint `POST /api/v1/export/step`, parametric solid from housing + cell array geometry
+- **Option 4 — Housing-geometry-based positioning**: BMS, cables, and harness should attach to housing walls (flush against inner face) rather than to cell array bounds. Requires passing `housingL, housingW` into `buildBMS()`. BMS Z = `housingW / 2 - WALL_MM - bmsThick / 2`; harness Y = `housingH / 2 - 4`; cable exits at `housingH / 2`.
+
+## Layout Notes
+
+The bento grid uses `grid-template-rows: 2.4fr 1fr` at all desktop breakpoints (1024px+). At smaller viewports (< 1024px) the grid is `auto` rows, so `bio-card` and `contact-card` have explicit `max-height` values (200px at < 640px, 240px at 640–1023px) to keep scroll active.
+
+The bottom row (`bottom-row`) is a flex row with `align-items: stretch`. Cards inside use `flex-direction: column; justify-content: flex-start; overflow: hidden; min-height: 0`. The result rows are in `.results-scroll-area` (`flex: 1; overflow-y: auto; min-height: 0`) so they scroll independently while the card size is fixed by the grid row.
+
+## Your task
+Is to review all the code and see if there's modifications must be done in the frontend or the design

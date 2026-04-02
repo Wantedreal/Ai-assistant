@@ -104,23 +104,25 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     # Apply dimensions based on cell type geometry
     cell_type = (cell.type_cellule or "Pouch").lower()
     
+    gap = req.cell_gap_mm  # inter-cell gap; S cells have S-1 gaps between them
+
     if cell_type == "cylindrical":
         diameter = cell.diameter_mm if cell.diameter_mm else cell.longueur_mm
-        L_raw = round(S * diameter, 2)
-        W_raw = round(P * diameter, 2)
+        L_raw = round(S * diameter + (S - 1) * gap, 2)
+        W_raw = round(P * diameter + (P - 1) * gap, 2)
         H_raw = round(cell.hauteur_mm, 2)
         # Cylindrical swelling: radial expansion (diameter increases) and axial (height)
-        L_gonfles = round(S * diameter * swelling_factor, 2)
-        W_gonfles = round(P * diameter * swelling_factor, 2)
+        L_gonfles = round(S * diameter * swelling_factor + (S - 1) * gap, 2)
+        W_gonfles = round(P * diameter * swelling_factor + (P - 1) * gap, 2)
         H_gonfles = round(cell.hauteur_mm * swelling_factor, 2)
     else: # Pouch and Prismatic
         # Cells stand upright: Y = longueur_mm (tall), X = hauteur_mm (thin face), Z = largeur_mm (wide face)
         # Series stacks in X (thin face to thin face), parallel spreads in Z
-        L_raw = round(S * cell.hauteur_mm, 2)   # pack depth  (X axis, series cells stacked thin)
-        W_raw = round(P * cell.largeur_mm, 2)   # pack width  (Z axis, parallel cells)
-        H_raw = round(cell.longueur_mm, 2)      # pack height (Y axis, cell stands upright)
-        L_gonfles = round(S * cell.hauteur_mm * swelling_factor, 2)
-        W_gonfles = round(P * cell.largeur_mm * swelling_factor, 2)
+        L_raw = round(S * cell.hauteur_mm + (S - 1) * gap, 2)   # pack depth  (X axis)
+        W_raw = round(P * cell.largeur_mm  + (P - 1) * gap, 2)  # pack width  (Z axis)
+        H_raw = round(cell.longueur_mm, 2)                       # pack height (Y axis)
+        L_gonfles = round(S * cell.hauteur_mm * swelling_factor + (S - 1) * gap, 2)
+        W_gonfles = round(P * cell.largeur_mm  * swelling_factor + (P - 1) * gap, 2)
         H_gonfles = round(cell.longueur_mm, 2)
     
     # Volume calculation based on cell type
@@ -179,17 +181,35 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     # Margins calculated on RAW dimensions (before swelling) as per spec
     # Formula: Margin par cote = (Dim_housing - Dim_raw) / 2
     # ══════════════════════════════════════════════════════════════════════════
-    margin_l = round((req.housing_l - L_raw) / 2.0, 2)
-    margin_w = round((req.housing_l_small - W_raw) / 2.0, 2)
+    margin_l_norm = round((req.housing_l - L_raw) / 2.0, 2)
+    margin_w_norm = round((req.housing_l_small - W_raw) / 2.0, 2)
     margin_h = round((req.housing_h - H_raw) / 2.0, 2)
     
+    margin_l_rot = round((req.housing_l - W_raw) / 2.0, 2)
+    margin_w_rot = round((req.housing_l_small - L_raw) / 2.0, 2)
+
+    fits_norm = margin_l_norm >= req.marge_mm and margin_w_norm >= req.marge_mm and margin_h >= req.marge_mm
+    fits_rot = margin_l_rot >= req.marge_mm and margin_w_rot >= req.marge_mm and margin_h >= req.marge_mm
+
+    is_rotated = False
+    margin_l = margin_l_norm
+    margin_w = margin_w_norm
+
+    if not fits_norm and fits_rot:
+        # Swap because it fits when rotated!
+        L_raw, W_raw = W_raw, L_raw
+        L_gonfles, W_gonfles = W_gonfles, L_gonfles
+        margin_l = margin_l_rot
+        margin_w = margin_w_rot
+        is_rotated = True
+
     marges_reelles = {
         "L": margin_l,
         "W": margin_w,
         "H": margin_h
     }
 
-    # If any margin is smaller than the required safety margin (req.marge_mm), it's a reject
+    # Check violations against final margins
     if margin_l < req.marge_mm:
         violations.append(f"Longueur (L): marge insuffisante ({margin_l} mm < {req.marge_mm} mm)")
     if margin_w < req.marge_mm:
@@ -199,9 +219,9 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
 
     verdict = VerdictEnum.ACCEPT if not violations else VerdictEnum.REJECT
     justification = (
-        "Toutes les marges de sécurité sont respectées sur les 3 axes."
-        if not violations
-        else " | ".join(violations)
+        "Toutes les marges respectées (Rotation auto: OUI)." if (not violations and is_rotated) else
+        "Toutes les marges respectées." if not violations else
+        " | ".join(violations)
     )
 
     # ── §9.3.2 mandatory derived metrics ─────────────────────────────────────
@@ -231,6 +251,7 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         courant_total_a=courant_total_a,
 
         # ── Extensions beyond dossier spec ───────────────────────────────────
+        is_rotated=is_rotated,
         total_cells=total_cells,
         dimensions_raw=ArrayDimensions(
             longueur_mm=L_raw,

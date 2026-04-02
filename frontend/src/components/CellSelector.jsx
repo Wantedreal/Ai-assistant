@@ -182,6 +182,7 @@ export function CellSelectorCard({
   )
 }
 
+
 export default function CellActionCard({ cell, calculating, onCalculate, calcError, form, result }) {
   const handleExportPdf = async () => {
     if (!result || !cell) {
@@ -190,17 +191,23 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
     }
 
     try {
+      const toNum = (v, fb = 0) => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? fb : n }
       const payload = {
-        cell_id: cell.id,
-        energie_cible_wh: form.energie_cible_wh,
-        tension_cible_v: form.tension_cible_v,
-        courant_cible_a: form.courant_cible_a,
-        housing_l: form.housing_l,
-        housing_l_small: form.housing_l_small,
-        housing_h: form.housing_h,
-        marge_mm: form.marge_mm,
-        depth_of_discharge: form.depth_of_discharge,
-        config_mode: form.config_mode,
+        cell_id:            cell.id,
+        energie_cible_wh:   form.energie_cible_wh  != null && form.energie_cible_wh  !== '' ? toNum(form.energie_cible_wh)  : undefined,
+        tension_cible_v:    form.tension_cible_v    != null && form.tension_cible_v    !== '' ? toNum(form.tension_cible_v)    : undefined,
+        courant_cible_a:    toNum(form.courant_cible_a),
+        housing_l:          toNum(form.housing_l),
+        housing_l_small:    toNum(form.housing_l_small),
+        housing_h:          toNum(form.housing_h),
+        marge_mm:           toNum(form.marge_mm, 15),
+        depth_of_discharge: toNum(form.depth_of_discharge, 80),
+        cell_gap_mm:        toNum(form.cell_gap_mm, 0),
+        config_mode:        form.config_mode,
+        ...(form.config_mode === 'manual' && {
+          manual_series:   parseInt(form.manual_series)   || undefined,
+          manual_parallel: parseInt(form.manual_parallel) || undefined,
+        }),
       }
 
       const response = await apiService.generatePdf(payload)
@@ -254,6 +261,19 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
 
       {calcError && (
         <div className="error-box">⚠ {calcError}</div>
+      )}
+
+      {result && (
+        <div style={{
+          marginTop: 8,
+          fontSize: '0.8rem',
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          color: result.verdict === 'ACCEPT' ? '#16a34a' : '#dc2626',
+          textAlign: 'center',
+        }}>
+          {result.verdict === 'ACCEPT' ? '✓ ACCEPT' : `✗ REJECT — ${result.justification}`}
+        </div>
       )}
     </div>
   )

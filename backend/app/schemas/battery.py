@@ -79,6 +79,9 @@ class CalculationRequest(BaseModel):
     manual_series: Optional[int] = Field(None, gt=0, description="Manual series count")
     manual_parallel: Optional[int] = Field(None, gt=0, description="Manual parallel count")
 
+    # Mechanical spacing
+    cell_gap_mm: float = Field(default=0.0, ge=0.0, description="Mechanical gap between adjacent cells in mm")
+
 
 class CalculationResult(BaseModel):
     """Response payload from calculation engine"""
@@ -99,6 +102,7 @@ class CalculationResult(BaseModel):
     courant_total_a: float = Field(..., description="Total current in A")
     
     # ── Extensions beyond spec ────────────────────────────────────────────
+    is_rotated: bool = Field(default=False, description="True if array was rotated 90deg to fit")
     total_cells: int = Field(..., description="Total number of cells")
     dimensions_raw: ArrayDimensions = Field(..., description="Array dimensions without margins")
     electrical: ElectricalSummary = Field(..., description="Extended electrical specs")

@@ -40,15 +40,21 @@ export default function ExportPanel({ builderRef }) {
   const exportSTL = () => {
     if (!builderRef.current || exporting) return
     setExporting('stl')
+    let flatGroup = null
     try {
-      const flatGroup = builderRef.current.getFlatGroupForSTL()
+      flatGroup = builderRef.current.getFlatGroupForSTL()
       const exporter = new STLExporter()
       const result = exporter.parse(flatGroup, { binary: true })
       triggerDownload(new Blob([result], { type: 'application/octet-stream' }), 'battery_pack.stl')
     } catch (err) {
       console.error('STLExporter:', err)
+    } finally {
+      // Dispose cloned geometries created by getFlatGroupForSTL to avoid GPU memory leak
+      if (flatGroup) {
+        flatGroup.traverse(obj => { if (obj.geometry) obj.geometry.dispose() })
+      }
+      setExporting(null)
     }
-    setExporting(null)
   }
 
   const btn = (label, loadingLabel, active, onClick) => (

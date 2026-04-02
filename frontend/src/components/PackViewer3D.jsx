@@ -7,17 +7,16 @@ import ExportPanel from './ExportPanel.jsx'
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI != null
 
-export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false }) {
+export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange }) {
   const mountRef = useRef(null)
   const controlsRef = useRef(null)
   const cameraRef = useRef(null)
   const builderRef = useRef(null)
   const [webglError, setWebglError] = useState(null)
-  const [cellGap, setCellGap] = useState(1.5)
   const [layers, setLayers] = useState({
     housing: true, cells: true, terminals: true, busbars: true,
-    brackets: true, insulation_cards: true, side_plates: true,
-    bms: true, balance_wires: true, cables: true,
+    brackets: false, insulation_cards: false, side_plates: false,
+    bms: false, balance_wires: false, cables: false,
   })
 
   const hasValidResult = result?.cell_used && result?.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0
@@ -94,12 +93,17 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       // Assembly builder
       const builder = new PackAssemblyBuilder(scene, isElectron)
       builder.setCellGap(cellGap)
-      builder.buildHousing(housingL, housingW, housingH)
+      builder.buildHousing(housingL, housingW, housingH, result?.verdict)
       builder.buildCells(housingH, result)
       builder.buildBusbars(housingH, result)
       builder.buildBracketsAndCards(housingH, result)
       builder.buildSidePlates(housingH, result)
       builder.buildBMS(housingH, result)
+
+      if (result?.is_rotated) {
+        builder.applyRotation()
+      }
+
       builderRef.current = builder
 
       // Apply any layer toggles that were set before this rebuild
@@ -200,6 +204,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       }
     }
     frame()
+    return () => { animating = false }
   }, [cameraPreset, housingL, housingW, housingH])
 
   // ─── Layer sync ────────────────────────────────────────────────────────────
@@ -237,7 +242,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
           onToggle={handleToggle}
           cellType={result?.cell_used?.type_cellule}
           cellGap={cellGap}
-          onCellGapChange={setCellGap}
+          onCellGapChange={onCellGapChange}
         />
       )}
 

@@ -2,6 +2,11 @@ import * as THREE from 'three'
 
 const isElectronCtx = typeof window !== 'undefined' && window.electronAPI != null
 
+/** Housing wall thickness (mm) — used in every yCenter calculation. Change here to affect all builders. */
+const WALL_MM = 2
+/** Prismatic terminal Z-offset ratio relative to cell width — positive terminal side. */
+const TERM_OFFSET_RATIO = 0.22
+
 /**
  * Builds the 3D battery pack assembly scene.
  * Each component type is a named THREE.Group stored in this.groups.
@@ -12,8 +17,8 @@ export class PackAssemblyBuilder {
     this.scene = scene
     this.isElectron = isElectron
     this.groups = new Map()
-    /** Gap (mm) between adjacent cells — represents bracket wall / insulation card spacing. */
     this.cellGap = 1.5
+    this._bmsPos = null
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
@@ -27,19 +32,21 @@ export class PackAssemblyBuilder {
     this.cellGap = gapMm
   }
 
-  buildHousing(housingL, housingW, housingH) {
+  buildHousing(housingL, housingW, housingH, verdict) {
     const group = new THREE.Group()
     group.name = 'housing'
 
+    const colorHex = verdict === 'REJECT' ? '#ef4444' : '#3b82f6'
+
     const housingMat = this.isElectron
       ? new THREE.MeshStandardMaterial({
-          color: new THREE.Color('#3b82f6'),
+          color: new THREE.Color(colorHex),
           transparent: true, opacity: 0.3,
           roughness: 0.3, metalness: 0.1,
           side: THREE.DoubleSide,
         })
       : new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color('#3b82f6'),
+          color: new THREE.Color(colorHex),
           transparent: true, opacity: 0.25,
           roughness: 0.1, transmission: 0.9,
           thickness: 2.0, clearcoat: 1.0,
@@ -47,13 +54,14 @@ export class PackAssemblyBuilder {
           side: THREE.DoubleSide,
         })
 
-    const wall = 2
+    const edgeColorHex = verdict === 'REJECT' ? '#f87171' : '#60a5fa'
+    const wall = WALL_MM
     const addWall = (w, h, d, x, y, z) => {
       const geom = new THREE.BoxGeometry(w, h, d)
       const mesh = new THREE.Mesh(geom, housingMat)
       mesh.position.set(x, y, z)
       if (!this.isElectron) { mesh.castShadow = true; mesh.receiveShadow = true }
-      const edgeMat = new THREE.LineBasicMaterial({ color: '#60a5fa', opacity: 0.8, transparent: true })
+      const edgeMat = new THREE.LineBasicMaterial({ color: edgeColorHex, opacity: 0.8, transparent: true })
       mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geom), edgeMat))
       group.add(mesh)
     }
@@ -83,37 +91,37 @@ export class PackAssemblyBuilder {
   buildCells(housingH, result) {
     if (!result?.cell_used || !result?.dimensions_array || result.nb_serie <= 0 || result.nb_parallele <= 0) return
 
-    const { nb_serie: S, nb_parallele: P, cell_used, dimensions_array } = result
+    const { nb_serie: S, nb_parallele: P, cell_used } = result
     const type = (cell_used.type_cellule || 'Pouch').toLowerCase()
     const isCylindrical = type === 'cylindrical'
 
     isCylindrical
-      ? this._buildCylindricalCells(S, P, cell_used, dimensions_array, housingH, result.verdict)
-      : this._buildPrismaticCells(S, P, cell_used, dimensions_array, housingH, result.verdict)
+      ? this._buildCylindricalCells(S, P, cell_used, housingH, result.verdict)
+      : this._buildPrismaticCells(S, P, cell_used, housingH, result.verdict)
   }
 
   buildBusbars(housingH, result) {
     if (!result?.cell_used || !result?.dimensions_array || result.nb_serie <= 0 || result.nb_parallele <= 0) return
 
-    const { nb_serie: S, nb_parallele: P, cell_used, dimensions_array } = result
+    const { nb_serie: S, nb_parallele: P, cell_used } = result
     const type = (cell_used.type_cellule || 'Pouch').toLowerCase()
     const isCylindrical = type === 'cylindrical'
 
     isCylindrical
-      ? this._buildNickelStrips(S, P, cell_used, dimensions_array, housingH)
-      : this._buildPrismaticBusbars(S, P, cell_used, dimensions_array, housingH)
+      ? this._buildNickelStrips(S, P, cell_used, housingH)
+      : this._buildPrismaticBusbars(S, P, cell_used, housingH)
   }
 
   buildBracketsAndCards(housingH, result) {
     if (!result?.cell_used || !result?.dimensions_array || result.nb_serie <= 0 || result.nb_parallele <= 0) return
 
-    const { nb_serie: S, nb_parallele: P, cell_used, dimensions_array } = result
+    const { nb_serie: S, nb_parallele: P, cell_used } = result
     const type = (cell_used.type_cellule || 'Pouch').toLowerCase()
 
     if (type === 'cylindrical') {
-      this._buildCylindricalBrackets(S, P, cell_used, dimensions_array, housingH)
+      this._buildCylindricalBrackets(S, P, cell_used, housingH)
     } else {
-      this._buildPrismaticInsulationCards(S, P, cell_used, dimensions_array, housingH)
+      this._buildPrismaticInsulationCards(S, P, cell_used, housingH)
     }
   }
 
@@ -131,12 +139,23 @@ export class PackAssemblyBuilder {
   buildSidePlates(housingH, result) {
     if (!result?.cell_used || !result?.dimensions_array || result.nb_serie <= 0 || result.nb_parallele <= 0) return
 
-    const { nb_serie: S, nb_parallele: P, cell_used, dimensions_array } = result
+    const { nb_serie: S, nb_parallele: P, cell_used } = result
     const type = (cell_used.type_cellule || 'Pouch').toLowerCase()
 
     if (type !== 'cylindrical') {
-      this._buildPrismaticSidePlates(S, P, cell_used, dimensions_array, housingH)
+      this._buildPrismaticSidePlates(S, P, cell_used, housingH)
     }
+  }
+
+  applyRotation() {
+    // Rotates the entire cell array 90 degrees to fit the housing
+    const groupsToRotate = ['cells', 'terminals', 'busbars', 'brackets', 'insulation_cards', 'side_plates', 'bms', 'balance_wires', 'cables']
+    groupsToRotate.forEach(name => {
+      const g = this.groups.get(name)
+      if (g) {
+        g.rotation.y = Math.PI / 2
+      }
+    })
   }
 
   /**
@@ -230,13 +249,13 @@ export class PackAssemblyBuilder {
 
   // ─── Private Builders ──────────────────────────────────────────────────────
 
-  _buildCylindricalCells(S, P, cell_used, dimensions_array, housingH, verdict) {
+  _buildCylindricalCells(S, P, cell_used, housingH, verdict) {
     const totalCells = S * P
     const diameter = cell_used.diameter_mm || cell_used.longueur_mm
     const height = cell_used.hauteur_mm
     const stepX = diameter + this.cellGap
     const stepZ = diameter + this.cellGap
-    const wall = 2
+
 
     // The PVC wrap is the full visible body
     const bodyH = height * 0.96
@@ -256,10 +275,9 @@ export class PackAssemblyBuilder {
     const negDiscGeom = new THREE.CylinderGeometry(negDiscR, negDiscR, negDiscH, 24)
 
     // Materials
-    const ok = verdict === 'ACCEPT'
     const bodyMat = this.isElectron
-      ? new THREE.MeshStandardMaterial({ color: new THREE.Color(ok ? '#1d4ed8' : '#ef4444'), metalness: 0.0, roughness: 0.55 })
-      : new THREE.MeshPhysicalMaterial({ color: new THREE.Color(ok ? '#1d4ed8' : '#ef4444'), metalness: 0.0, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.4 })
+      ? new THREE.MeshStandardMaterial({ color: new THREE.Color('#1d4ed8'), metalness: 0.0, roughness: 0.55 })
+      : new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#1d4ed8'), metalness: 0.0, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.4 })
     const steelMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0c0c0'), metalness: 0.85, roughness: 0.2 })
 
     // Instanced meshes
@@ -276,7 +294,7 @@ export class PackAssemblyBuilder {
 
     const startX = -(S * stepX) / 2 + stepX / 2
     const startZ = -(P * stepZ) / 2 + stepZ / 2
-    const yCenter = (-housingH / 2) + wall + bodyH / 2
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
 
     const qFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
     const qNorm = new THREE.Quaternion()
@@ -325,9 +343,9 @@ export class PackAssemblyBuilder {
     this._addGroup('terminals', termGroup)
   }
 
-  _buildPrismaticCells(S, P, cell_used, dimensions_array, housingH, verdict) {
+  _buildPrismaticCells(S, P, cell_used, housingH, verdict) {
     const totalCells = S * P
-    const wall = 2
+
 
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
@@ -336,30 +354,31 @@ export class PackAssemblyBuilder {
     const stepX = sizeX + this.cellGap
     const stepZ = sizeZ + this.cellGap
 
-    const posOffZ =  sizeZ * 0.22
-    const negOffZ = -sizeZ * 0.22
+    const posOffZ =  sizeZ * TERM_OFFSET_RATIO
+    const negOffZ = -sizeZ * TERM_OFFSET_RATIO
 
     // Dimensions for highly realistic components
     const wrapH = bodyH - 2
-    const yCenter = (-housingH / 2) + wall + bodyH / 2
-    const yWrap = (-housingH / 2) + wall + wrapH / 2
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
+    const yWrap = (-housingH / 2) + WALL_MM + wrapH / 2
     const yCap  = yWrap + wrapH / 2 + 1     // cap is 2mm thick
     const termY = yCap + 1                  // top black surface
 
     // Geometries
     const wrapGeom = new THREE.BoxGeometry(sizeX, wrapH, sizeZ)
     const capGeom  = new THREE.BoxGeometry(sizeX, 2, sizeZ)
-    const ringGeom = new THREE.CylinderGeometry(Math.min(sizeZ * 0.18, 10), Math.min(sizeZ * 0.18, 10), 1.5, 16)
-    const baseGeom = new THREE.CylinderGeometry(Math.min(sizeZ * 0.15, 8), Math.min(sizeZ * 0.15, 8), 2.5, 16)
-    const studGeom = new THREE.CylinderGeometry(2.5, 2.5, 7, 12)
-    const qrGeom   = new THREE.BoxGeometry(8, 0.4, 8)
-    const nutGeom  = new THREE.CylinderGeometry(4, 4, 1.5, 6) // Hex nut
+    // Terminal must fit within the cell's thin face (sizeX), not exceed half the cell thickness
+    const termRadius = Math.min(sizeX * 0.32, sizeZ * 0.12, 7)
+    const ringGeom = new THREE.CylinderGeometry(termRadius * 1.2, termRadius * 1.2, 1.5, 16)
+    const baseGeom = new THREE.CylinderGeometry(termRadius, termRadius, 2.5, 16)
+    const studGeom = new THREE.CylinderGeometry(Math.min(2.5, termRadius * 0.45), Math.min(2.5, termRadius * 0.45), 7, 12)
+    const qrGeom   = new THREE.BoxGeometry(Math.min(8, sizeX * 0.6), 0.4, Math.min(8, sizeX * 0.6))
+    const nutGeom  = new THREE.CylinderGeometry(Math.min(4, termRadius * 0.65), Math.min(4, termRadius * 0.65), 1.5, 6) // Hex nut
 
     // Materials
-    const ok = verdict === 'ACCEPT'
     const wrapMat = this.isElectron
-      ? new THREE.MeshStandardMaterial({ color: ok ? '#2563eb' : '#ef4444', metalness: 0.1, roughness: 0.6 })
-      : new THREE.MeshPhysicalMaterial({ color: ok ? '#2563eb' : '#ef4444', metalness: 0.1, roughness: 0.6, clearcoat: 0.5, clearcoatRoughness: 0.3 })
+      ? new THREE.MeshStandardMaterial({ color: '#2563eb', metalness: 0.1, roughness: 0.6 })
+      : new THREE.MeshPhysicalMaterial({ color: '#2563eb', metalness: 0.1, roughness: 0.6, clearcoat: 0.5, clearcoatRoughness: 0.3 })
     const capMat     = new THREE.MeshStandardMaterial({ color: '#171717', metalness: 0.2, roughness: 0.7 })
     const termMat    = new THREE.MeshStandardMaterial({ color: '#d4d4d4', metalness: 0.8, roughness: 0.25 })
     const posRingMat = new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.0, roughness: 1.0 }) // Pure White Pos
@@ -402,7 +421,7 @@ export class PackAssemblyBuilder {
         capMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, yCap, z))
 
         // QR Code
-        qrMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.2, z + posOffZ * 0.5))
+        qrMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.2, z))
 
         // Insulator Rings (stark contrast)
         posRingMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.75, pZ))
@@ -449,18 +468,17 @@ export class PackAssemblyBuilder {
     this._addGroup('terminals', termGroup)
   }
 
-  _buildNickelStrips(S, P, cell_used, dimensions_array, housingH) {
+  _buildNickelStrips(S, P, cell_used, housingH) {
     const diameter = cell_used.diameter_mm || cell_used.longueur_mm
     const height   = cell_used.hauteur_mm
     const stepX    = diameter + this.cellGap
     const stepZ    = diameter + this.cellGap
-    const wall     = 2
 
     const bodyH = height * 0.96
     const posDiscH = 0.3   // must match _buildCylindricalCells
     const negDiscH = 0.3
 
-    const yCenter = (-housingH / 2) + wall + bodyH / 2
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
     // Strips sit just above the flush terminal discs
     const yTop    = yCenter + bodyH / 2 + posDiscH + 0.2
     const yBottom = yCenter - bodyH / 2 - negDiscH - 0.2
@@ -531,8 +549,8 @@ export class PackAssemblyBuilder {
     this._addGroup('busbars', group)
   }
 
-  _buildPrismaticBusbars(S, P, cell_used, dimensions_array, housingH) {
-    const wall = 2
+  _buildPrismaticBusbars(S, P, cell_used, housingH) {
+
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
     const bodyH = cell_used.longueur_mm * 0.95
@@ -543,10 +561,10 @@ export class PackAssemblyBuilder {
     const termD = Math.min(sizeX * 0.8, 14)
     const termH = Math.max(8, cell_used.longueur_mm * 0.07)
 
-    const posOffZ = sizeZ * 0.22
-    const negOffZ = -sizeZ * 0.22
+    const posOffZ = sizeZ * TERM_OFFSET_RATIO
+    const negOffZ = -sizeZ * TERM_OFFSET_RATIO
 
-    const yCenter = (-housingH / 2) + wall + bodyH / 2
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
     // The top black surface is at yCenter + bodyH / 2 + 1
     // The metal base pad sits 1.25mm above that (total offset 2.25)
     // Busbar is 1mm thick, sits precisely on top of the base pad
@@ -649,15 +667,14 @@ export class PackAssemblyBuilder {
    * Bottom bracket: cells sit in the recesses of the grid (negative end cradled).
    * Top bracket:    positive terminals protrude through the open slots.
    */
-  _buildCylindricalBrackets(S, P, cell_used, dimensions_array, housingH) {
+  _buildCylindricalBrackets(S, P, cell_used, housingH) {
     const diameter = cell_used.diameter_mm || cell_used.longueur_mm
     const height   = cell_used.hauteur_mm
     const stepX    = diameter + this.cellGap
     const stepZ    = diameter + this.cellGap
-    const wall     = 2
 
     const bodyH   = height * 0.96
-    const yCenter = (-housingH / 2) + wall + bodyH / 2
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
     const barH    = 6.0    // bracket thickness — thick enough to grip cell ends
     const gap     = 0.4    // clearance between cells and bracket
 
@@ -684,6 +701,7 @@ export class PackAssemblyBuilder {
           new THREE.BoxGeometry(totalX + barWx * 2, barH, barWz), mat
         )
         mesh.position.set(0, yMid, z)
+        if (!this.isElectron) { mesh.castShadow = true; mesh.receiveShadow = true }
         group.add(mesh)
       }
 
@@ -694,6 +712,7 @@ export class PackAssemblyBuilder {
           new THREE.BoxGeometry(barWx, barH, totalZ + barWz * 2), mat
         )
         mesh.position.set(x, yMid, 0)
+        if (!this.isElectron) { mesh.castShadow = true; mesh.receiveShadow = true }
         group.add(mesh)
       }
     }
@@ -708,45 +727,47 @@ export class PackAssemblyBuilder {
     this._addGroup('brackets', group)
   }
 
-  _buildPrismaticInsulationCards(S, P, cell_used, dimensions_array, housingH) {
+  _buildPrismaticInsulationCards(S, P, cell_used, housingH) {
     if (S < 2) return
 
-    const wall = 2
+
     const bodyH = cell_used.longueur_mm * 0.95
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
     const stepX = sizeX + this.cellGap
     const stepZ = sizeZ + this.cellGap
     const startX = -(S * stepX) / 2 + stepX / 2
-    const yCenter = (-housingH / 2) + wall + bodyH / 2
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
     const cardW = P * stepZ
 
     const geom = new THREE.BoxGeometry(0.3, bodyH, cardW)
-    const mat = new THREE.MeshStandardMaterial({ color: '#f97316', metalness: 0.0, roughness: 0.9 })
-
-    const group = new THREE.Group()
-    group.name = 'insulation_cards'
+    const mat  = new THREE.MeshStandardMaterial({ color: '#f97316', metalness: 0.0, roughness: 0.9 })
+    const mesh = new THREE.InstancedMesh(geom, mat, S - 1)
 
     for (let s = 0; s < S - 1; s++) {
       const cardX = startX + s * stepX + stepX / 2
-      const card = new THREE.Mesh(geom, mat)
-      card.position.set(cardX, yCenter, 0)
-      group.add(card)
+      mesh.setMatrixAt(s, new THREE.Matrix4().makeTranslation(cardX, yCenter, 0))
     }
+    mesh.instanceMatrix.needsUpdate = true
+
+    const group = new THREE.Group()
+    group.name = 'insulation_cards'
+    group.add(mesh)
 
     this._addGroup('insulation_cards', group)
   }
 
-  _buildPrismaticSidePlates(S, P, cell_used, dimensions_array, housingH) {
-    const wall = 2
+  _buildPrismaticSidePlates(S, P, cell_used, housingH) {
+
     const bodyH = cell_used.longueur_mm * 0.95
-    const yCenter = (-housingH / 2) + wall + bodyH / 2
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
     const stepX = sizeX + this.cellGap
     const stepZ = sizeZ + this.cellGap
-    const totalX = S * stepX
-    const totalZ = P * stepZ
+    // Outer face of the last cell (no phantom gap beyond the array)
+    const arrayHalfX = (S * stepX - this.cellGap) / 2
+    const arrayHalfZ = (P * stepZ - this.cellGap) / 2
 
     const mat = new THREE.MeshStandardMaterial({ color: '#6b7280', metalness: 0.4, roughness: 0.6 })
 
@@ -754,8 +775,8 @@ export class PackAssemblyBuilder {
     group.name = 'side_plates'
 
     // Side plates at Z extremes (clamp along Z axis)
-    const sideGeom = new THREE.BoxGeometry(totalX, bodyH, 3)
-    const sideZ = totalZ / 2 + 1.5
+    const sideGeom = new THREE.BoxGeometry(arrayHalfX * 2, bodyH, 3)
+    const sideZ = arrayHalfZ + 1.5
     const sPlus  = new THREE.Mesh(sideGeom, mat)
     sPlus.position.set(0, yCenter,  sideZ)
     const sMinus = new THREE.Mesh(sideGeom, mat)
@@ -763,8 +784,8 @@ export class PackAssemblyBuilder {
     group.add(sPlus, sMinus)
 
     // End plates at X extremes (thicker, clamp along X axis)
-    const endGeom = new THREE.BoxGeometry(5, bodyH, totalZ + 6)
-    const endX = totalX / 2 + 2.5
+    const endGeom = new THREE.BoxGeometry(5, bodyH, arrayHalfZ * 2 + 6)
+    const endX = arrayHalfX + 2.5
     const ePlus  = new THREE.Mesh(endGeom, mat)
     ePlus.position.set( endX, yCenter, 0)
     const eMinus = new THREE.Mesh(endGeom, mat)
@@ -775,7 +796,7 @@ export class PackAssemblyBuilder {
   }
 
   _buildBMSBoard(S, P, cell_used, housingH, isCylindrical) {
-    const wall = 2
+
     let yCenter, totalX, totalZ
 
     if (isCylindrical) {
@@ -783,7 +804,7 @@ export class PackAssemblyBuilder {
       const stepX = diameter + this.cellGap
       const stepZ = diameter + this.cellGap
       const bodyH = cell_used.hauteur_mm * 0.96
-      yCenter = (-housingH / 2) + wall + bodyH / 2
+      yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
       totalX = S * stepX
       totalZ = P * stepZ
     } else {
@@ -792,7 +813,7 @@ export class PackAssemblyBuilder {
       const bodyH = cell_used.longueur_mm * 0.95
       const stepX = sizeX + this.cellGap
       const stepZ = sizeZ + this.cellGap
-      yCenter = (-housingH / 2) + wall + bodyH / 2
+      yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
       totalX = S * stepX
       totalZ = P * stepZ
     }
@@ -838,7 +859,7 @@ export class PackAssemblyBuilder {
     const pinEndX   = bmsX + bmsL / 2 - 15
     for (let i = 0; i <= S; i++) {
         // distribute from left to right equally
-        const px = pinStartX + (S === 0 ? 0 : (i / S) * (pinEndX - pinStartX))
+        const px = pinStartX + (i / S) * (pinEndX - pinStartX)
         const py = bmsY + bmsW / 2 + 1.5
         const pz = bmsZ
         const pin = new THREE.Mesh(pinGeom, brassMat)
@@ -884,7 +905,7 @@ export class PackAssemblyBuilder {
     if (!this._bmsPos) return
 
     const { topPins } = this._bmsPos
-    const wall = 2
+
     const wireR = 0.35
     const group = new THREE.Group()
     group.name = 'balance_wires'
@@ -896,7 +917,7 @@ export class PackAssemblyBuilder {
       stepX = diameter + this.cellGap
       stepZ = stepX
       const bodyH = cell_used.hauteur_mm * 0.96
-      const yCenter = (-housingH / 2) + wall + bodyH / 2
+      const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
       yTop       = yCenter + bodyH / 2 + 1.2
       yBottom    = yCenter - bodyH / 2 - 0.6
       startX     = -(S * stepX) / 2 + stepX / 2
@@ -909,7 +930,7 @@ export class PackAssemblyBuilder {
       const termH = Math.max(8, cell_used.longueur_mm * 0.07)
       stepX = sizeX + this.cellGap
       stepZ = sizeZ + this.cellGap
-      const yCenter = (-housingH / 2) + wall + bodyH / 2
+      const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
       yTop       = yCenter + bodyH / 2 + termH + 2.5
       yBottom    = yTop
       startX     = -(S * stepX) / 2 + stepX / 2
@@ -931,8 +952,8 @@ export class PackAssemblyBuilder {
         // Wire 0 is pack−, always at the bottom of the first column
         if (i === 0) tapY = yBottom
       } else {
-        const posOffZ =  cell_used.largeur_mm * 0.22
-        const negOffZ = -cell_used.largeur_mm * 0.22
+        const posOffZ =  cell_used.largeur_mm * TERM_OFFSET_RATIO
+        const negOffZ = -cell_used.largeur_mm * TERM_OFFSET_RATIO
         tapY = yTop
         tapX = i === 0 ? startX : startX + (i - 1) * stepX
         tapZ = i === 0 ? startZ + negOffZ
@@ -960,7 +981,7 @@ export class PackAssemblyBuilder {
     if (!this._bmsPos) return
 
     const { portC, portB, portP, bmsX, bmsY, bmsL, bmsZ } = this._bmsPos
-    const wall = 2
+
     const cableR = 2.5
 
     let packPlus, packMinus, packTop
@@ -969,7 +990,7 @@ export class PackAssemblyBuilder {
       const diameter = cell_used.diameter_mm || cell_used.longueur_mm
       const stepX    = diameter + this.cellGap
       const bodyH    = cell_used.hauteur_mm * 0.96
-      const yCenter  = (-housingH / 2) + wall + bodyH / 2
+      const yCenter  = (-housingH / 2) + WALL_MM + bodyH / 2
       packTop        = yCenter + bodyH / 2 + 1.2
       const yBottom  = yCenter - bodyH / 2 - 0.6
       const firstX   = -(S * stepX) / 2 + stepX / 2
@@ -984,12 +1005,12 @@ export class PackAssemblyBuilder {
       const stepZ = sizeZ + this.cellGap
       const bodyH = cell_used.longueur_mm * 0.95
       const termH = Math.max(8, cell_used.longueur_mm * 0.07)
-      const yCenter = (-housingH / 2) + wall + bodyH / 2
+      const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
       packTop = yCenter + bodyH / 2 + termH + 2.5
       const startX  = -(S * stepX) / 2 + stepX / 2
       const startZ  = -(P * stepZ) / 2 + stepZ / 2
-      const posOffZ = sizeZ * 0.22
-      const negOffZ = -sizeZ * 0.22
+      const posOffZ = sizeZ * TERM_OFFSET_RATIO
+      const negOffZ = -sizeZ * TERM_OFFSET_RATIO
       const lastFlipped = (S - 1) % 2 === 1
       packMinus = new THREE.Vector3(startX,                    packTop, startZ + negOffZ)
       packPlus  = new THREE.Vector3(startX + (S - 1) * stepX, packTop, startZ + (lastFlipped ? negOffZ : posOffZ))

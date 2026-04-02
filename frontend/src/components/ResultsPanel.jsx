@@ -15,25 +15,6 @@ function ResultRow({ label, value, highlight = false, last = false }) {
   )
 }
 
-function VerdictBadge({ verdict, justification }) {
-  if (!verdict) return null
-  const ok = verdict === 'ACCEPT'
-  const mod = ok ? 'accept' : 'reject'
-
-  return (
-    <div className={`verdict-badge verdict-badge--${mod}`}>
-      <div className={`verdict-badge__header verdict-badge__header--${mod}`}>
-        <span style={{ fontSize: '1rem' }}>{ok ? '✓' : '✗'}</span>
-        <span className={`verdict-badge__text verdict-badge__text--${mod}`}>
-          {verdict}
-        </span>
-      </div>
-      {!ok && justification && (
-        <div className="verdict-badge__detail">{justification}</div>
-      )}
-    </div>
-  )
-}
 
 export default function ResultsPanel({ result, margeMm }) {
   return (
@@ -49,11 +30,14 @@ export default function ResultsPanel({ result, margeMm }) {
         </div>
 
         {result ? (
-          <>
-            <ResultRow label="Configuration"  value={`${result.nb_serie}S / ${result.nb_parallele}P`} highlight />
-            <ResultRow label="Pack voltage"   value={fmt(result.tension_totale_v, 'V')} last />
-            <VerdictBadge verdict={result.verdict} justification={result.justification} />
-          </>
+          <div className="results-scroll-area">
+            <ResultRow label="Configuration"   value={`${result.nb_serie}S / ${result.nb_parallele}P`} highlight />
+            <ResultRow label="Total cells"     value={result.total_cells} />
+            <ResultRow label="Pack voltage"    value={fmt(result.tension_totale_v, 'V')} />
+            <ResultRow label="Pack current"    value={fmt(result.courant_total_a, 'A', 1)} />
+            <ResultRow label="Usable energy"   value={fmt(result.electrical?.usable_energy_wh, 'Wh', 1)} />
+            <ResultRow label="Total weight"    value={fmt(result.electrical?.total_weight_kg, 'kg', 2)} last />
+          </div>
         ) : (
           <div className="results-placeholder">
             Set constraints and click Calculate
@@ -72,11 +56,15 @@ export default function ResultsPanel({ result, margeMm }) {
         </div>
 
         {result ? (
-          <>
-            <ResultRow label="Final L"  value={fmt(result.dimensions_array.longueur_mm, 'mm')} highlight />
-            <ResultRow label="Final W"  value={fmt(result.dimensions_array.largeur_mm,  'mm')} highlight />
-            <ResultRow label="Final H"  value={fmt(result.dimensions_array.hauteur_mm,  'mm')} last />
-          </>
+          <div className="results-scroll-area">
+            <ResultRow label="Final L"       value={fmt(result.dimensions_array.longueur_mm, 'mm')} highlight />
+            <ResultRow label="Final W"       value={fmt(result.dimensions_array.largeur_mm,  'mm')} highlight />
+            <ResultRow label="Final H"       value={fmt(result.dimensions_array.hauteur_mm,  'mm')} highlight />
+            <ResultRow label="Margin L"      value={fmt(result.marges_reelles?.L, 'mm')} />
+            <ResultRow label="Margin W"      value={fmt(result.marges_reelles?.W, 'mm')} />
+            <ResultRow label="Margin H"      value={fmt(result.marges_reelles?.H, 'mm')} />
+            <ResultRow label="Fill ratio"    value={fmt(result.taux_occupation_pct, '%', 1)} last />
+          </div>
         ) : (
           <div className="results-placeholder">
             Results will appear after calculation

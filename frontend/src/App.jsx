@@ -47,6 +47,7 @@ export default function App() {
     housing_l_small:    318,
     housing_h:          71,
     marge_mm:           15,
+    cell_gap_mm:        1.5,
     depth_of_discharge: 80,
     config_mode:        'auto',
     manual_series:      '',
@@ -148,6 +149,7 @@ export default function App() {
       marge_mm:           toNum(form.marge_mm, 15),
       depth_of_discharge: toNum(form.depth_of_discharge, 80),
       config_mode:        form.config_mode,
+      cell_gap_mm:        toNum(form.cell_gap_mm, 0),
       ...(form.config_mode === 'manual' && {
         manual_series:   parseInt(form.manual_series)   || undefined,
         manual_parallel: parseInt(form.manual_parallel) || undefined,
@@ -230,6 +232,8 @@ export default function App() {
                   cameraPreset={fullscreenMode ? cameraPreset : 'free'}
                   onFullscreenClick={handleEnterFullscreen}
                   isFullscreen={false}
+                  cellGap={toNum(form.cell_gap_mm, 0)}
+                  onCellGapChange={v => handleFieldChange('cell_gap_mm', v)}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -349,6 +353,8 @@ export default function App() {
                   result={result}
                   cameraPreset={cameraPreset}
                   isFullscreen={true}
+                  cellGap={toNum(form.cell_gap_mm, 0)}
+                  onCellGapChange={v => handleFieldChange('cell_gap_mm', v)}
                 />
               </Suspense>
             </ErrorBoundary>
