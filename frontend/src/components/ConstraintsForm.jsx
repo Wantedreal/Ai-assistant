@@ -26,7 +26,7 @@ export default function ConstraintsForm({ form, onFieldChange }) {
   const set = key => val => onFieldChange(key, val)
 
   return (
-    <div className="headline-card" style={{ minHeight: 'auto' }}>
+    <div className="headline-card">
       <div className="constraints-body">
         <h2 className="constraints-title">Constraints</h2>
 

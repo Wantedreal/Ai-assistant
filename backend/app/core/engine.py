@@ -125,19 +125,12 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         W_gonfles = round(P * cell.largeur_mm  * swelling_factor + (P - 1) * gap, 2)
         H_gonfles = round(cell.longueur_mm, 2)
     
-    # Volume calculation based on cell type
-    # Cylindrical: V = pi * r^2 * h (true cylinder volume)
-    # Prismatic/Pouch: V = l * w * h (rectangular prism volume)
-    if cell_type == "cylindrical":
-        radius_mm = diameter / 2.0
-        vol_per_cell = math.pi * (radius_mm ** 2) * cell.hauteur_mm
-    else:
-        vol_per_cell = cell.longueur_mm * cell.largeur_mm * cell.hauteur_mm
-    
-    # Taux d'occupation based on RAW cell volume (before swelling)
-    vol_cellules = total_cells * vol_per_cell
+    # Taux d'occupation: array bounding box vs housing volume (space utilization).
+    # Measures how well the cell arrangement fills the available housing space.
+    # Note: computed from L_raw/W_raw before any rotation swap (product is invariant).
     vol_housing = req.housing_l * req.housing_l_small * req.housing_h
-    taux_occupation_pct = round((vol_cellules / vol_housing) * 100.0, 2) if vol_housing > 0 else 0.0
+    array_vol = L_raw * W_raw * H_raw
+    taux_occupation_pct = round((array_vol / vol_housing) * 100.0, 2) if vol_housing > 0 else 0.0
 
     violations = []
 
@@ -171,9 +164,9 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
                 f"Courant cible non atteint ({round(actual_current_a, 2)} A < {round(req.courant_cible_a, 2)} A)"
             )
 
-    if vol_housing > 0 and vol_cellules > vol_housing:
+    if vol_housing > 0 and array_vol > vol_housing:
         violations.append(
-            f"Volume total cellules dépasse le volume pack ({round(vol_cellules, 2)} mm³ > {round(vol_housing, 2)} mm³)"
+            f"Volume réseau cellules dépasse le volume pack ({round(array_vol, 2)} mm³ > {round(vol_housing, 2)} mm³)"
         )
 
     # ══════════════════════════════════════════════════════════════════════════

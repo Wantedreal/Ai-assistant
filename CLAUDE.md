@@ -194,4 +194,4 @@ The bento grid uses `grid-template-rows: 2.4fr 1fr` at all desktop breakpoints (
 The bottom row (`bottom-row`) is a flex row with `align-items: stretch`. Cards inside use `flex-direction: column; justify-content: flex-start; overflow: hidden; min-height: 0`. The result rows are in `.results-scroll-area` (`flex: 1; overflow-y: auto; min-height: 0`) so they scroll independently while the card size is fixed by the grid row.
 
 ## Your task
-Is to review all the code and see if there's modifications must be done in the frontend or the design
+Is to review all the code and see if there's modifications must be done in the frontend or the design, see if the logic is well done, because I think that the fill ratio is not raisonable, also in the front for the full window  I can't see the rest of the bottom cards

@@ -266,13 +266,34 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
       {result && (
         <div style={{
           marginTop: 8,
-          fontSize: '0.8rem',
-          fontWeight: 700,
-          letterSpacing: '0.08em',
-          color: result.verdict === 'ACCEPT' ? '#16a34a' : '#dc2626',
           textAlign: 'center',
         }}>
-          {result.verdict === 'ACCEPT' ? '✓ ACCEPT' : `✗ REJECT — ${result.justification}`}
+          <div style={{
+            fontSize: '0.8rem',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            color: result.verdict === 'ACCEPT' ? '#16a34a' : '#dc2626',
+          }}>
+            {result.verdict === 'ACCEPT' ? '✓ ACCEPT' : '✗ REJECT'}
+          </div>
+          {result.verdict !== 'ACCEPT' && result.justification && (
+            <div
+              title={result.justification}
+              style={{
+                fontSize: '0.65rem',
+                fontWeight: 500,
+                color: '#dc2626',
+                marginTop: 4,
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+              }}
+            >
+              {result.justification}
+            </div>
+          )}
         </div>
       )}
     </div>
