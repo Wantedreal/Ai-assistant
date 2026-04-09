@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { PackAssemblyBuilder } from '../3d/PackAssemblyBuilder.js'
 import LayerControlPanel from './LayerControlPanel.jsx'
 import ExportPanel from './ExportPanel.jsx'
@@ -12,6 +13,8 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
   const controlsRef = useRef(null)
   const cameraRef = useRef(null)
   const builderRef = useRef(null)
+  const cellGltfRef = useRef(null)
+  const [cellGltfReady, setCellGltfReady] = useState(false)
   const [webglError, setWebglError] = useState(null)
   const [layers, setLayers] = useState({
     housing: true, cells: true, terminals: true, busbars: true,
@@ -20,6 +23,17 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
   })
 
   const hasValidResult = result?.cell_used && result?.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0
+
+  // ─── Load cylindrical cell GLB once ─────────────────────────────────────────
+  useEffect(() => {
+    const loader = new GLTFLoader()
+    loader.load(
+      '/meshes/cell_cylindrical.glb',
+      (gltf) => { cellGltfRef.current = gltf; setCellGltfReady(true) },
+      undefined,
+      (err) => { console.warn('Cell GLB load failed, using procedural fallback:', err) }
+    )
+  }, [])
 
   // ─── Main scene setup ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -93,6 +107,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       // Assembly builder
       const builder = new PackAssemblyBuilder(scene, isElectron)
       builder.setCellGap(cellGap)
+      if (cellGltfRef.current) builder.setCellModel(cellGltfRef.current)
       builder.buildHousing(housingL, housingW, housingH, result?.verdict)
       builder.buildCells(housingH, result)
       builder.buildBusbars(housingH, result)
@@ -160,7 +175,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
         mountRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1c23;color:#999;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:10px">⚠️</div><div>3D Viewer unavailable</div><div style="font-size:12px;margin-top:8px;color:#666">${error.message}</div></div></div>`
       }
     }
-  }, [housingL, housingW, housingH, result, cellGap])
+  }, [housingL, housingW, housingH, result, cellGap, cellGltfReady])
 
   // ─── Camera preset animation ────────────────────────────────────────────────
   useEffect(() => {

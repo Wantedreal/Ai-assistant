@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 const isElectronCtx = typeof window !== 'undefined' && window.electronAPI != null
 
@@ -6,6 +7,8 @@ const isElectronCtx = typeof window !== 'undefined' && window.electronAPI != nul
 const WALL_MM = 2
 /** Prismatic terminal Z-offset ratio relative to cell width — positive terminal side. */
 const TERM_OFFSET_RATIO = 0.22
+/** Cylindrical cell bracket height (mm) — shared between bracket builder and nickel strip positioner. */
+const BRACKET_H = 10
 
 /**
  * Builds the 3D battery pack assembly scene.
@@ -31,6 +34,12 @@ export class PackAssemblyBuilder {
   setCellGap(gapMm) {
     this.cellGap = gapMm
   }
+
+  /** Provide a pre-loaded GLTF object (from GLTFLoader) for mesh-based cylindrical cells. */
+  setCellModel(gltf) {
+    this._cellGltf = gltf
+  }
+
 
   buildHousing(housingL, housingW, housingH, verdict) {
     const group = new THREE.Group()
@@ -250,6 +259,10 @@ export class PackAssemblyBuilder {
   // ─── Private Builders ──────────────────────────────────────────────────────
 
   _buildCylindricalCells(S, P, cell_used, housingH, verdict) {
+    if (this._cellGltf) {
+      this._buildCylindricalCellsFromGLTF(S, P, cell_used, housingH)
+      return
+    }
     const totalCells = S * P
     const diameter = cell_used.diameter_mm || cell_used.longueur_mm
     const height = cell_used.hauteur_mm
@@ -338,6 +351,142 @@ export class PackAssemblyBuilder {
     const termGroup = new THREE.Group()
     termGroup.name = 'terminals'
     termGroup.add(posDiscMesh, posBtnMesh, negDiscMesh)
+
+    this._addGroup('cells', cellGroup)
+    this._addGroup('terminals', termGroup)
+  }
+
+  _buildCylindricalCellsFromGLTF(S, P, cell_used, housingH) {
+    const diameter = cell_used.diameter_mm || cell_used.longueur_mm
+    const height   = cell_used.hauteur_mm
+    const stepX    = diameter + this.cellGap
+    const stepZ    = diameter + this.cellGap
+    const totalCells = S * P
+
+    // ── Collect all Meshes from the GLTF scene ─────────────────────────────
+    const gltfMeshes = []
+    this._cellGltf.scene.updateMatrixWorld(true)
+    this._cellGltf.scene.traverse(obj => {
+      if (obj.isMesh) gltfMeshes.push(obj)
+    })
+
+    // ── Compute bounding box of the whole model ─────────────────────────────
+    const box = new THREE.Box3()
+    gltfMeshes.forEach(m => box.expandByObject(m))
+    const modelSize   = new THREE.Vector3()
+    const modelCenter = new THREE.Vector3()
+    box.getSize(modelSize)
+    box.getCenter(modelCenter)
+
+    // Scale so model fits actual cell dimensions.
+    // GLTF Y-up: model height → cell hauteur_mm, model XZ → cell diameter_mm.
+    const scaleY  = modelSize.y > 0 ? height   / modelSize.y : 1
+    const scaleXZ = Math.max(modelSize.x, modelSize.z) > 0
+      ? diameter / Math.max(modelSize.x, modelSize.z) : 1
+
+    // ── Group geometries by material, bake world transform + scale ──────────
+    const matGroups = new Map() // THREE.Material → THREE.BufferGeometry[]
+
+    gltfMeshes.forEach(m => {
+      // Clone geometry and bake world transform so everything is in model-local space
+      const geom = m.geometry.clone()
+      geom.applyMatrix4(m.matrixWorld)
+
+      // Re-center around origin
+      geom.translate(-modelCenter.x, -modelCenter.y, -modelCenter.z)
+
+      // Apply cell-dimension scale
+      const pos = geom.attributes.position
+      for (let i = 0; i < pos.count; i++) {
+        pos.setX(i, pos.getX(i) * scaleXZ)
+        pos.setY(i, pos.getY(i) * scaleY)
+        pos.setZ(i, pos.getZ(i) * scaleXZ)
+      }
+      pos.needsUpdate = true
+      geom.computeVertexNormals()
+
+      const srcMat = Array.isArray(m.material) ? m.material[0] : m.material
+
+      // Find existing slot for this source material uuid
+      let targetMat = null
+      for (const [mat] of matGroups) {
+        if (mat._srcUuid === srcMat.uuid) { targetMat = mat; break }
+      }
+
+      if (!targetMat) {
+        // Clone material so _disposeGroup can safely dispose it
+        const cloned = srcMat.clone()
+        cloned._srcUuid = srcMat.uuid
+
+        const c = cloned.color
+        const isWhite = c.r > 0.8 && c.g > 0.8 && c.b > 0.8
+        const isGreen = c.g > c.r * 1.5 && c.g > c.b * 1.5
+
+        if (isWhite) {
+          // Terminal caps — steel look
+          cloned.metalness = 0.85
+          cloned.roughness = 0.2
+        } else if (isGreen) {
+          // Insulator band → cyan
+          cloned.color.set('#0080FF')
+          cloned.metalness = 0.0
+          cloned.roughness = 0.5
+        } else {
+          // Body (PVC wrap) — matte plastic, no metalness
+          cloned.metalness = 0.0
+          cloned.roughness = 0.55
+        }
+
+        matGroups.set(cloned, [])
+        targetMat = cloned
+      }
+      matGroups.get(targetMat).push(geom)
+    })
+
+    // ── Merge geometries within each material group ─────────────────────────
+    const instancedMeshes = []
+    matGroups.forEach((geoms, mat) => {
+      const merged = mergeGeometries(geoms, false)
+      geoms.forEach(g => g.dispose())
+      const im = new THREE.InstancedMesh(merged, mat, totalCells)
+      im.name = 'cell_gltf'
+      if (!this.isElectron) { im.castShadow = true; im.receiveShadow = true }
+      instancedMeshes.push(im)
+    })
+
+    // ── Position each instance ──────────────────────────────────────────────
+    const startX  = -(S * stepX) / 2 + stepX / 2
+    const startZ  = -(P * stepZ) / 2 + stepZ / 2
+    const yCenter = (-housingH / 2) + WALL_MM + height / 2
+
+    const qFlip  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
+    const qNorm  = new THREE.Quaternion()
+    const scaleV = new THREE.Vector3(1, 1, 1)
+
+    let idx = 0
+    for (let s = 0; s < S; s++) {
+      const x       = startX + s * stepX
+      const flipped = s % 2 === 1
+      for (let p = 0; p < P; p++) {
+        const z    = startZ + p * stepZ
+        const mat4 = new THREE.Matrix4().compose(
+          new THREE.Vector3(x, yCenter, z),
+          flipped ? qFlip : qNorm,
+          scaleV
+        )
+        instancedMeshes.forEach(im => im.setMatrixAt(idx, mat4))
+        idx++
+      }
+    }
+    instancedMeshes.forEach(im => { im.instanceMatrix.needsUpdate = true })
+
+    // Terminals are baked into the GLTF model; empty group keeps layer-toggle consistent
+    const cellGroup = new THREE.Group()
+    cellGroup.name = 'cells'
+    instancedMeshes.forEach(im => cellGroup.add(im))
+
+    const termGroup = new THREE.Group()
+    termGroup.name = 'terminals'
 
     this._addGroup('cells', cellGroup)
     this._addGroup('terminals', termGroup)
@@ -474,14 +623,18 @@ export class PackAssemblyBuilder {
     const stepX    = diameter + this.cellGap
     const stepZ    = diameter + this.cellGap
 
-    const bodyH = height * 0.96
-    const posDiscH = 0.3   // must match _buildCylindricalCells
-    const negDiscH = 0.3
+    // When the GLTF mesh is used the model spans the full cell height (terminals included).
+    // When procedural, body is 96% of height with 0.3mm terminal discs on top/bottom.
+    const bodyH    = this._cellGltf ? height      : height * 0.96
+    const posDiscH = this._cellGltf ? 0           : 0.3
+    const negDiscH = this._cellGltf ? 0           : 0.3
 
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
-    // Strips sit just above the flush terminal discs
-    const yTop    = yCenter + bodyH / 2 + posDiscH + 0.2
-    const yBottom = yCenter - bodyH / 2 - negDiscH - 0.2
+    // Bracket protrudes BRACKET_H*0.25 above/below the cell body end.
+    // Nickel strips must sit on top of (above) the bracket, not inside it.
+    const bracketProtrude = BRACKET_H * 0.25
+    const yTop    = yCenter + bodyH / 2 + Math.max(posDiscH, bracketProtrude) + 0.3
+    const yBottom = yCenter - bodyH / 2 - Math.max(negDiscH, bracketProtrude) - 0.3
 
     const stripThickness = 0.5              // visible but realistic (was 0.15 — too thin)
     const pWidth  = diameter * 0.6          // strip width in X (covers terminal area)
@@ -673,9 +826,9 @@ export class PackAssemblyBuilder {
     const stepX    = diameter + this.cellGap
     const stepZ    = diameter + this.cellGap
 
-    const bodyH   = height * 0.96
+    const bodyH   = this._cellGltf ? height : height * 0.96
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
-    const barH    = 6.0    // bracket thickness — thick enough to grip cell ends
+    const barH    = BRACKET_H
     const gap     = 0.4    // clearance between cells and bracket
 
     const totalX  = S * stepX
