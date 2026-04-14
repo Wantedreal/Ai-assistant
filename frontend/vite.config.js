@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  base: './',   // relative paths so assets load under file:// in Electron
   build: {
     rollupOptions: {
       output: {

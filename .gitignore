@@ -4,6 +4,16 @@ dist/
 __pycache__/
 *.pyc
 
+# PyInstaller build cache (regenerated on every build)
+backend/build/
+
+# Excel lock files (created when file is open in Excel)
+~$*.xlsx
+~$*.xls
+
+# Test artifacts
+test_report.pdf
+
 # OS generated files
 .DS_Store
 .DS_Store?

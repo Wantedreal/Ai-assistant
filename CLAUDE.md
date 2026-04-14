@@ -52,16 +52,31 @@ All three must run simultaneously for full local development.
 
 ### Production Build
 
-```powershell
-# Backend: single-folder executable via PyInstaller
-cd backend
-pyinstaller --onedir --name backend --add-data "data;data" --paths . app/main.py
+**The simplest way — use the build scripts at the project root:**
 
-# Frontend + Electron installer
+| Script | When to use | Time |
+|--------|-------------|------|
+| `build-smart.bat` | Auto-detects what changed (recommended) | — |
+| `build-fast.bat` | Only frontend/JS/React changed | ~15 sec |
+| `build-full.bat` | Backend Python code changed | ~3 min |
+
+Or press **`Ctrl+Shift+B`** in VS Code (runs `build-smart.bat`).
+
+**Manual steps (what the scripts do internally):**
+
+```powershell
+# Step 1 — Backend (only needed when .py files change)
+cd backend
+venv\Scripts\pyinstaller.exe backend.spec --noconfirm --clean
+# Output: backend/dist/backend/backend.exe + _internal/
+
+# Step 2 — Frontend + installer
 cd frontend
-npm run electron:build
+npm run electron:build:win
 # Output: frontend/release/Battery Pack Designer Setup 1.0.0.exe
 ```
+
+Output installer is fully self-contained — no Python or Node.js needed on target machine.
 
 ## Key API Endpoints
 
@@ -104,7 +119,7 @@ Builds the scene in named `THREE.Group` layers (toggle with `setLayerVisible`):
 
 **Module-level constants** (change once, affect all builders):
 - `WALL_MM = 2` — housing wall thickness used in every `yCenter` calculation
-- `TERM_OFFSET_RATIO = 0.22` — prismatic terminal Z-offset as fraction of cell width
+- `TERM_OFFSET_RATIO = 0.35` — prismatic terminal Z-offset as fraction of cell width
 
 **Cylindrical axis convention** — cells stand upright (Y = `hauteur_mm`), series spreads in X with pitch = `diameter_mm + cellGap`, parallel spreads in Z. Adjacent series columns alternate polarity (flip 180° around Z-axis).
 
@@ -193,5 +208,68 @@ The bento grid uses `grid-template-rows: 2.4fr 1fr` at all desktop breakpoints (
 
 The bottom row (`bottom-row`) is a flex row with `align-items: stretch`. Cards inside use `flex-direction: column; justify-content: flex-start; overflow: hidden; min-height: 0`. The result rows are in `.results-scroll-area` (`flex: 1; overflow-y: auto; min-height: 0`) so they scroll independently while the card size is fixed by the grid row.
 
+## Production Build System
+
+### New files created for the build pipeline
+
+| File | Purpose |
+|------|---------|
+| `backend/run.py` | PyInstaller entry point — calls `multiprocessing.freeze_support()` before anything else (required on Windows to prevent infinite child process spawning), then starts uvicorn |
+| `backend/backend.spec` | PyInstaller spec with all hidden imports for uvicorn, anyio, SQLAlchemy SQLite dialect, reportlab fonts. Use this instead of the CLI command. |
+| `build-smart.bat` | Double-clickable: auto-detects via `git diff` whether backend changed, runs fast or full build accordingly |
+| `build-fast.bat` | Double-clickable: rebuilds frontend + Electron installer only (~15 sec) |
+| `build-full.bat` | Double-clickable: rebuilds backend (PyInstaller) + frontend + installer (~3 min) |
+| `build.ps1` | PowerShell equivalent of `build-full.bat` |
+| `.vscode/tasks.json` | VS Code build tasks — `Ctrl+Shift+B` runs `build-smart.bat` |
+| `frontend/public/images/Projectscard.png` | Copied from `frontend/images/` into `public/` so Vite bundles it in `dist/` |
+| `frontend/public/images/ImageCard.png` | Same as above |
+| `BUILD.md` | Human-readable build & distribution guide |
+
+### Key fixes made for production (Electron + PyInstaller)
+
+**`backend/app/core/config.py`**
+- Added explicit `sys.frozen` check: when running as a PyInstaller bundle, uses `sys._MEIPASS` as the base path for the SQLite database. Without this, `__file__` inside a PYZ archive is not a real filesystem path and the DB can't be found.
+
+**`frontend/vite.config.js`**
+- Added `base: './'` — Vite defaults to `base: '/'` which produces absolute asset paths (`/assets/...`). Under `file://` in Electron, these resolve to the filesystem root and fail. Relative paths (`./assets/...`) work correctly.
+
+**`frontend/index.html`** (source, not dist)
+- Fixed CSP: added `http://127.0.0.1:8000` to `connect-src` (Node.js may resolve `localhost` to IPv6 `::1` while uvicorn only binds IPv4 `0.0.0.0`). Also relaxed `script-src` for module scripts under `file://`.
+
+**`frontend/electron/main.cjs`**
+- Health check URL changed from `http://localhost:8000` to `http://127.0.0.1:8000` (IPv4 explicit — avoids IPv6 resolution issue on Windows).
+- Backend spawn now sets `cwd: path.dirname(binaryPath)` so `_internal/` is always found relative to the exe.
+- Added `backendLastOutput` capture (stderr + stdout) that appears in the error dialog if health check fails.
+- Added log file at `%APPDATA%\backend.log` for post-mortem debugging.
+
+**`frontend/src/components/PackViewer3D.jsx`**
+- GLB mesh paths changed from `/meshes/...` to `./meshes/...` (same absolute-vs-relative issue as assets).
+
+**`frontend/src/components/CellSelector.jsx`**
+- Image path changed from `/images/Projectscard.png` to `./images/Projectscard.png`.
+
+**`frontend/src/services/api.js`**
+- `baseURL` changed from `http://localhost:8000/api/v1` to `http://127.0.0.1:8000/api/v1` (matches `electron/main.cjs`; avoids IPv6 resolution on Windows).
+
+**`frontend/package.json`**
+- Added full `electron-builder` config: `appId`, `productName`, `extraResources` (copies `backend/dist/backend` → `resources/backend`), NSIS installer options, platform targets.
+
+**`backend/app/main.py`**
+- `run_engine()` calls wrapped in `try/except ValueError` on both `/calculate` and `/calculate/pdf` — unhandled ValueError now returns 422 instead of raw 500 traceback.
+- Removed `"*"` wildcard from CORS `allow_origins`; explicit origins only.
+
+**`backend/app/schemas/battery.py`**
+- `CellRead` updated from Pydantic v1 `class Config` to `model_config = ConfigDict(from_attributes=True)`.
+
+**`backend/tests/test_suite.py`** (new file)
+- 63-test pytest suite covering all endpoints, engine algorithm, swelling, geometry, manual mode, PDF, and input validation.
+- Run: `cd backend && venv/Scripts/python.exe -m pytest tests/test_suite.py -v`
+
+### Distribution
+
+Copy `frontend/release/Battery Pack Designer Setup 1.0.0.exe` to target machine (USB, file share, etc.). Double-click to install — no Python or Node.js required. If Windows SmartScreen blocks it: "More info" → "Run anyway" (unsigned app warning, normal for internal tools).
+
+If the app fails on a very old machine: install [VC++ 2015-2022 Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) (required by Python 3.13, usually pre-installed on Windows 10/11).
+
 ## Your task
-View my code then, I want to improve more the 3d so I have an idea, I have some gltf files That I will use for drawing my shematization to make it visually appealing, to have an idea I put two gltf files in /meshes the twos are the cylindrical cells see what will help you to use as a mesh for my cylindrical cell , plan what you want to do because I will provide you for other gltf files but we will test if it will work now for this ones
+I want you to review the code entirely, then I want you to plan a solution to make a graphe idea for you to understand easily the project every time I open a new session if you will need to use some plugins/mcp/skills just tell me

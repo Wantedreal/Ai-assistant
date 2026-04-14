@@ -14,7 +14,11 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
   const cameraRef = useRef(null)
   const builderRef = useRef(null)
   const cellGltfRef = useRef(null)
+  const prismaticGltfRef = useRef(null)
+  const prismaticBusbarGltfRef = useRef(null)
   const [cellGltfReady, setCellGltfReady] = useState(false)
+  const [prismaticGltfReady, setPrismaticGltfReady] = useState(false)
+  const [prismaticBusbarGltfReady, setPrismaticBusbarGltfReady] = useState(false)
   const [webglError, setWebglError] = useState(null)
   const [layers, setLayers] = useState({
     housing: true, cells: true, terminals: true, busbars: true,
@@ -24,14 +28,26 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
   const hasValidResult = result?.cell_used && result?.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0
 
-  // ─── Load cylindrical cell GLB once ─────────────────────────────────────────
+  // ─── Load GLB assets once ────────────────────────────────────────────────────
   useEffect(() => {
     const loader = new GLTFLoader()
     loader.load(
-      '/meshes/cell_cylindrical.glb',
+      './meshes/cell_cylindrical.glb',
       (gltf) => { cellGltfRef.current = gltf; setCellGltfReady(true) },
       undefined,
       (err) => { console.warn('Cell GLB load failed, using procedural fallback:', err) }
+    )
+    loader.load(
+      './meshes/PrismaticCell.glb',
+      (gltf) => { prismaticGltfRef.current = gltf; setPrismaticGltfReady(true) },
+      undefined,
+      (err) => { console.warn('Prismatic GLB load failed, using procedural fallback:', err) }
+    )
+    loader.load(
+      './meshes/busbar_cylindrical.glb',
+      (gltf) => { prismaticBusbarGltfRef.current = gltf; setPrismaticBusbarGltfReady(true) },
+      undefined,
+      (err) => { console.warn('Prismatic busbar GLB load failed, using procedural fallback:', err) }
     )
   }, [])
 
@@ -68,14 +84,16 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       mountRef.current.innerHTML = ''
       mountRef.current.appendChild(renderer.domElement)
 
-      // Lights
-      scene.add(new THREE.AmbientLight(0xffffff, 0.6))
+      // Lights — 3-point setup + hemisphere
+      scene.add(new THREE.AmbientLight(0xffffff, 0.5))
 
-      const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4)
+      // Sky/ground hemisphere — warm sky, cool ground bounce
+      const hemi = new THREE.HemisphereLight(0xddeeff, 0x223322, 0.5)
       hemi.position.set(0, 2000, 0)
       scene.add(hemi)
 
-      const dir = new THREE.DirectionalLight(0xffffff, 1.2)
+      // Key light — front-right-top (casts shadows)
+      const dir = new THREE.DirectionalLight(0xffffff, 1.1)
       dir.position.set(1000, 2000, 1000)
       if (!isElectron) {
         dir.castShadow = true
@@ -88,9 +106,15 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       }
       scene.add(dir)
 
-      const point = new THREE.PointLight(0xffffff, 0.5)
-      point.position.set(-1000, 1500, -1000)
-      scene.add(point)
+      // Fill light — left side, softer, slightly cool
+      const fill = new THREE.DirectionalLight(0xcce8ff, 0.5)
+      fill.position.set(-1200, 600, 400)
+      scene.add(fill)
+
+      // Rim / back light — behind the pack, reveals silhouette edges
+      const rim = new THREE.DirectionalLight(0xfff5e0, 0.4)
+      rim.position.set(200, 800, -1500)
+      scene.add(rim)
 
       // Shadow floor (non-Electron only)
       if (!isElectron) {
@@ -108,6 +132,8 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       const builder = new PackAssemblyBuilder(scene, isElectron)
       builder.setCellGap(cellGap)
       if (cellGltfRef.current) builder.setCellModel(cellGltfRef.current)
+      if (prismaticGltfRef.current) builder.setPrismaticModel(prismaticGltfRef.current)
+      if (prismaticBusbarGltfRef.current) builder.setPrismaticBusbarModel(prismaticBusbarGltfRef.current)
       builder.buildHousing(housingL, housingW, housingH, result?.verdict)
       builder.buildCells(housingH, result)
       builder.buildBusbars(housingH, result)
@@ -175,7 +201,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
         mountRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1c23;color:#999;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:10px">⚠️</div><div>3D Viewer unavailable</div><div style="font-size:12px;margin-top:8px;color:#666">${error.message}</div></div></div>`
       }
     }
-  }, [housingL, housingW, housingH, result, cellGap, cellGltfReady])
+  }, [housingL, housingW, housingH, result, cellGap, cellGltfReady, prismaticGltfReady, prismaticBusbarGltfReady])
 
   // ─── Camera preset animation ────────────────────────────────────────────────
   useEffect(() => {
@@ -221,6 +247,13 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
     frame()
     return () => { animating = false }
   }, [cameraPreset, housingL, housingW, housingH])
+
+  // ─── Auto-enable brackets for cylindrical cells ────────────────────────────
+  useEffect(() => {
+    const type = (result?.cell_used?.type_cellule || '').toLowerCase()
+    const isCyl = type === 'cylindrical'
+    setLayers(prev => ({ ...prev, brackets: isCyl }))
+  }, [result?.cell_used?.type_cellule])
 
   // ─── Layer sync ────────────────────────────────────────────────────────────
   useEffect(() => {

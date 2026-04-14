@@ -6,7 +6,7 @@ const isElectronCtx = typeof window !== 'undefined' && window.electronAPI != nul
 /** Housing wall thickness (mm) — used in every yCenter calculation. Change here to affect all builders. */
 const WALL_MM = 2
 /** Prismatic terminal Z-offset ratio relative to cell width — positive terminal side. */
-const TERM_OFFSET_RATIO = 0.22
+const TERM_OFFSET_RATIO = 0.35
 /** Cylindrical cell bracket height (mm) — shared between bracket builder and nickel strip positioner. */
 const BRACKET_H = 10
 
@@ -38,6 +38,16 @@ export class PackAssemblyBuilder {
   /** Provide a pre-loaded GLTF object (from GLTFLoader) for mesh-based cylindrical cells. */
   setCellModel(gltf) {
     this._cellGltf = gltf
+  }
+
+  /** Provide a pre-loaded GLTF object for mesh-based prismatic/pouch cells. */
+  setPrismaticModel(gltf) {
+    this._prismaticGltf = gltf
+  }
+
+  /** Provide a pre-loaded GLTF object for the prismatic cell busbars. */
+  setPrismaticBusbarModel(gltf) {
+    this._prismaticBusbarGltf = gltf
   }
 
 
@@ -392,6 +402,10 @@ export class PackAssemblyBuilder {
       const geom = m.geometry.clone()
       geom.applyMatrix4(m.matrixWorld)
 
+      // Strip non-essential attributes for compatible merging
+      const keep = new Set(['position', 'normal'])
+      Object.keys(geom.attributes).forEach(k => { if (!keep.has(k)) geom.deleteAttribute(k) })
+
       // Re-center around origin
       geom.translate(-modelCenter.x, -modelCenter.y, -modelCenter.z)
 
@@ -403,6 +417,7 @@ export class PackAssemblyBuilder {
         pos.setZ(i, pos.getZ(i) * scaleXZ)
       }
       pos.needsUpdate = true
+      geom.deleteAttribute('normal')
       geom.computeVertexNormals()
 
       const srcMat = Array.isArray(m.material) ? m.material[0] : m.material
@@ -448,6 +463,7 @@ export class PackAssemblyBuilder {
     matGroups.forEach((geoms, mat) => {
       const merged = mergeGeometries(geoms, false)
       geoms.forEach(g => g.dispose())
+      if (!merged) { console.warn('mergeGeometries returned null for cylindrical mat', mat._srcUuid); return }
       const im = new THREE.InstancedMesh(merged, mat, totalCells)
       im.name = 'cell_gltf'
       if (!this.isElectron) { im.castShadow = true; im.receiveShadow = true }
@@ -493,12 +509,15 @@ export class PackAssemblyBuilder {
   }
 
   _buildPrismaticCells(S, P, cell_used, housingH, verdict) {
+    if (this._prismaticGltf) {
+      this._buildPrismaticCellsFromGLTF(S, P, cell_used, housingH)
+      return
+    }
     const totalCells = S * P
-
 
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
-    const bodyH = cell_used.longueur_mm * 0.95
+    const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
 
     const stepX = sizeX + this.cellGap
     const stepZ = sizeZ + this.cellGap
@@ -617,6 +636,133 @@ export class PackAssemblyBuilder {
     this._addGroup('terminals', termGroup)
   }
 
+  _buildPrismaticCellsFromGLTF(S, P, cell_used, housingH) {
+    const sizeX = cell_used.hauteur_mm   // series axis  (scene X) ← GLTF Z
+    const sizeZ = cell_used.largeur_mm   // parallel axis (scene Z) ← GLTF X
+    const bodyH = cell_used.longueur_mm  // standing height (scene Y) ← GLTF Y
+    const stepX = sizeX + this.cellGap
+    const stepZ = sizeZ + this.cellGap
+    const totalCells = S * P
+
+    // ── Collect meshes ─────────────────────────────────────────────────────────
+    const gltfMeshes = []
+    this._prismaticGltf.scene.updateMatrixWorld(true)
+    this._prismaticGltf.scene.traverse(obj => { if (obj.isMesh) gltfMeshes.push(obj) })
+
+    if (gltfMeshes.length === 0) {
+      console.warn('PrismaticCell GLB: no meshes found, falling back to procedural')
+      this._prismaticGltf = null
+      this._buildPrismaticCells(S, P, cell_used, housingH, null)
+      return
+    }
+
+    // ── Bounding box ───────────────────────────────────────────────────────────
+    const box = new THREE.Box3()
+    gltfMeshes.forEach(m => box.expandByObject(m))
+    const modelSize   = new THREE.Vector3()
+    const modelCenter = new THREE.Vector3()
+    box.getSize(modelSize)
+    box.getCenter(modelCenter)
+
+    // GLTF axis → scene axis:
+    //   GLTF X (148mm wide face)  → scene Z  (largeur_mm,  parallel axis)
+    //   GLTF Y (101mm height)     → scene Y  (longueur_mm, standing axis)
+    //   GLTF Z (26.5mm thickness) → scene X  (hauteur_mm,  series axis)
+    const scaleX = modelSize.z > 0 ? sizeX / modelSize.z : 1
+    const scaleY = modelSize.y > 0 ? bodyH / modelSize.y : 1
+    const scaleZ = modelSize.x > 0 ? sizeZ / modelSize.x : 1
+
+    // ── One InstancedMesh per GLTF primitive (each has its own unique material) ─
+    // No mergeGeometries needed — direct 1:1 mapping avoids all attribute issues.
+    const instancedMeshes = []
+
+    gltfMeshes.forEach(m => {
+      // Build geometry in scene-space (axis swap + scale baked in)
+      const srcGeom = m.geometry
+      const geom    = new THREE.BufferGeometry()
+
+      const srcPos = srcGeom.index
+        ? srcGeom.toNonIndexed().attributes.position
+        : srcGeom.attributes.position
+
+      const count   = srcPos.count
+      const posArr  = new Float32Array(count * 3)
+      const worldMat = m.matrixWorld
+
+      for (let i = 0; i < count; i++) {
+        // Read world-space position
+        let gx = srcPos.getX(i)
+        let gy = srcPos.getY(i)
+        let gz = srcPos.getZ(i)
+        // Apply world matrix manually
+        const wx = worldMat.elements[0]*gx + worldMat.elements[4]*gy + worldMat.elements[8]*gz  + worldMat.elements[12]
+        const wy = worldMat.elements[1]*gx + worldMat.elements[5]*gy + worldMat.elements[9]*gz  + worldMat.elements[13]
+        const wz = worldMat.elements[2]*gx + worldMat.elements[6]*gy + worldMat.elements[10]*gz + worldMat.elements[14]
+        // Center + axis swap + scale: GLTF(X,Y,Z) → scene(Z,Y,X)
+        posArr[i*3]   = (wz - modelCenter.z) * scaleX  // GLTF Z → scene X
+        posArr[i*3+1] = (wy - modelCenter.y) * scaleY  // GLTF Y → scene Y
+        posArr[i*3+2] = (wx - modelCenter.x) * scaleZ  // GLTF X → scene Z
+      }
+
+      geom.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+      geom.computeVertexNormals()
+
+      // Material
+      const srcMat = Array.isArray(m.material) ? m.material[0] : m.material
+      const mat    = srcMat.clone()
+      const c      = mat.color
+      if      (c.r < 0.05 && c.g < 0.05 && c.b < 0.05)             { mat.metalness = 0.2;  mat.roughness = 0.7  }  // black top
+      else if (c.b > 0.7  && c.r < 0.1)                             { mat.metalness = 0.0;  mat.roughness = 0.55 }  // blue body
+      else if (c.r > 0.8  && c.g > 0.6  && c.b > 0.6)              { mat.color.set('#d97742'); mat.metalness = 0.9; mat.roughness = 0.15 }  // copper +
+      else if (c.r > 0.7  && c.g > 0.8  && c.b > 0.9)              { mat.color.set('#c0c0c0'); mat.metalness = 0.85; mat.roughness = 0.2  }  // silver -
+      else if (c.r > 0.3  && c.r < 0.5  && Math.abs(c.r-c.g)<0.05) { mat.metalness = 0.7;  mat.roughness = 0.3  }  // gray terminal block
+      else                                                            { mat.metalness = 0.0;  mat.roughness = 0.8  }  // off-white label
+
+      const im = new THREE.InstancedMesh(geom, mat, totalCells)
+      im.name = 'prismatic_gltf'
+      if (!this.isElectron) { im.castShadow = true; im.receiveShadow = true }
+      instancedMeshes.push(im)
+    })
+
+    // ── Position each instance ────────────────────────────────────────────────
+    const startX  = -(S * stepX) / 2 + stepX / 2
+    const startZ  = -(P * stepZ) / 2 + stepZ / 2
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
+
+    // Alternating polarity: odd series columns flip 180° around Y axis
+    const qNorm = new THREE.Quaternion()
+    const qFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
+    const scaleV = new THREE.Vector3(1, 1, 1)
+
+    let idx = 0
+    for (let s = 0; s < S; s++) {
+      const x       = startX + s * stepX
+      const flipped = s % 2 === 1
+      for (let p = 0; p < P; p++) {
+        const z    = startZ + p * stepZ
+        const mat4 = new THREE.Matrix4().compose(
+          new THREE.Vector3(x, yCenter, z),
+          flipped ? qFlip : qNorm,
+          scaleV
+        )
+        instancedMeshes.forEach(im => im.setMatrixAt(idx, mat4))
+        idx++
+      }
+    }
+    instancedMeshes.forEach(im => { im.instanceMatrix.needsUpdate = true })
+
+    // Terminals baked into model; empty group keeps layer-toggle consistent
+    const cellGroup = new THREE.Group()
+    cellGroup.name = 'cells'
+    instancedMeshes.forEach(im => cellGroup.add(im))
+
+    const termGroup = new THREE.Group()
+    termGroup.name = 'terminals'
+
+    this._addGroup('cells', cellGroup)
+    this._addGroup('terminals', termGroup)
+  }
+
   _buildNickelStrips(S, P, cell_used, housingH) {
     const diameter = cell_used.diameter_mm || cell_used.longueur_mm
     const height   = cell_used.hauteur_mm
@@ -703,30 +849,31 @@ export class PackAssemblyBuilder {
   }
 
   _buildPrismaticBusbars(S, P, cell_used, housingH) {
+    if (this._prismaticBusbarGltf) {
+      this._buildPrismaticBusbarsFromGLTF(S, P, cell_used, housingH)
+      return
+    }
 
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
-    const bodyH = cell_used.longueur_mm * 0.95
+    const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
     const stepX = sizeX + this.cellGap
     const stepZ = sizeZ + this.cellGap
 
-    const termW = Math.min(sizeZ * 0.15, 22)
-    const termD = Math.min(sizeX * 0.8, 14)
-    const termH = Math.max(8, cell_used.longueur_mm * 0.07)
-
-    const posOffZ = sizeZ * TERM_OFFSET_RATIO
+    const posOffZ =  sizeZ * TERM_OFFSET_RATIO
     const negOffZ = -sizeZ * TERM_OFFSET_RATIO
 
+    // Terminal base radius (same formula as _buildPrismaticCells)
+    const termRadius = Math.min(sizeX * 0.32, sizeZ * 0.12, 7)
+
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
-    // The top black surface is at yCenter + bodyH / 2 + 1
-    // The metal base pad sits 1.25mm above that (total offset 2.25)
-    // Busbar is 1mm thick, sits precisely on top of the base pad
     const busbarThickness = 1.0
     const busbarY = yCenter + bodyH / 2 + 2.25 + busbarThickness / 2
 
+    // Neutral grey — brushed aluminium / steel busbar
     const copperMat = this.isElectron
-      ? new THREE.MeshStandardMaterial({ color: '#d97742', metalness: 0.8, roughness: 0.3 })
-      : new THREE.MeshPhysicalMaterial({ color: '#d97742', metalness: 0.8, roughness: 0.2, clearcoat: 0.2 })
+      ? new THREE.MeshStandardMaterial({ color: '#a0a0a0', metalness: 0.85, roughness: 0.25 })
+      : new THREE.MeshPhysicalMaterial({ color: '#a0a0a0', metalness: 0.85, roughness: 0.2, clearcoat: 0.3 })
 
     const group = new THREE.Group()
     group.name = 'busbars'
@@ -734,9 +881,12 @@ export class PackAssemblyBuilder {
     const startX = -(S * stepX) / 2 + stepX / 2
     const startZ = -(P * stepZ) / 2 + stepZ / 2
 
-    // Build the snake path starting from bottom-right, zigzagging upward.
-    // For 8S2P: row1 R->L, vertical at left edge, row0 L->R
-    // Pack+ = first cell's pos (bottom-right), Pack- = last cell's neg (top-right)
+    // Bar dimensions: extend past each terminal centre so posts are fully seated
+    const hBarW = termRadius * 2 + 2      // Z (or X for vBars) — covers terminal base diameter
+    const hBarX = stepX + termRadius * 2  // X width of horizontal bars
+
+    // Snake path: within each parallel row, bars go alternately R→L / L→R.
+    // A single vertical bar at each row-transition edge creates one Pack+ and one Pack-.
     const snake = []
     for (let p = P - 1; p >= 0; p--) {
       const rowInSnake = P - 1 - p
@@ -747,44 +897,29 @@ export class PackAssemblyBuilder {
       }
     }
 
-    // Helper: get the world-space Z of the pos and neg terminals for a cell
-    const termZ = (s, p) => {
+    const getTermZ = (s, p) => {
       const flipped = s % 2 === 1
       const z = startZ + p * stepZ
-      return {
-        posZ: z + (flipped ? negOffZ : posOffZ),
-        negZ: z + (flipped ? posOffZ : negOffZ)
-      }
+      return { posZ: z + (flipped ? negOffZ : posOffZ), negZ: z + (flipped ? posOffZ : negOffZ) }
     }
 
-    // For each consecutive pair in the snake, place exactly one busbar
-    // connecting snake[i].neg -> snake[i+1].pos
     const hBars = []
     const vBars = []
-
     for (let i = 0; i < snake.length - 1; i++) {
-      const a = snake[i]
-      const b = snake[i + 1]
-      const tA = termZ(a.s, a.p)
-      const tB = termZ(b.s, b.p)
-
+      const a = snake[i], b = snake[i + 1]
+      const tA = getTermZ(a.s, a.p), tB = getTermZ(b.s, b.p)
       if (a.p === b.p) {
-        // Within-row: horizontal busbar
-        const xA = startX + a.s * stepX
-        const xB = startX + b.s * stepX
+        const xA = startX + a.s * stepX, xB = startX + b.s * stepX
         hBars.push({ x: (xA + xB) / 2, z: tA.negZ })
       } else {
-        // Row transition: vertical busbar at the edge
-        const negZ = tA.negZ
-        const posZ = tB.posZ
-        const len = Math.abs(negZ - posZ)
-        vBars.push({ x: startX + a.s * stepX, z: (negZ + posZ) / 2, len })
+        const negZ = tA.negZ, posZ = tB.posZ
+        vBars.push({ x: startX + a.s * stepX, z: (negZ + posZ) / 2, len: Math.abs(negZ - posZ) })
       }
     }
 
-    // Render horizontal busbars (within-row links)
+    // Horizontal bars (series junctions within each row)
     if (hBars.length > 0) {
-      const hGeom = new THREE.BoxGeometry(stepX, busbarThickness, termW * 0.8)
+      const hGeom = new THREE.BoxGeometry(hBarX, busbarThickness, hBarW)
       const hMesh = new THREE.InstancedMesh(hGeom, copperMat, hBars.length)
       if (!this.isElectron) hMesh.castShadow = true
       hBars.forEach((b, idx) => {
@@ -794,19 +929,178 @@ export class PackAssemblyBuilder {
       group.add(hMesh)
     }
 
-    // Render vertical busbars (row-transition links at the edges)
-    // Each vBar may have a different length, so we create individual meshes
+    // Vertical bars (row-transition — one per adjacent row pair, gives single Pack+/Pack-)
     if (vBars.length > 0) {
       const vGroup = new THREE.Group()
-      vBars.forEach((b) => {
-        const barLen = Math.max(b.len + termW * 0.3, termW)
-        const vGeom = new THREE.BoxGeometry(termD * 0.8, busbarThickness, barLen)
-        const vMeshSingle = new THREE.Mesh(vGeom, copperMat)
-        vMeshSingle.position.set(b.x, busbarY, b.z)
-        if (!this.isElectron) vMeshSingle.castShadow = true
-        vGroup.add(vMeshSingle)
+      vBars.forEach(b => {
+        const barLen = Math.max(b.len + hBarW, hBarW)
+        const vGeom = new THREE.BoxGeometry(hBarW, busbarThickness, barLen)
+        const vMesh = new THREE.Mesh(vGeom, copperMat)
+        vMesh.position.set(b.x, busbarY, b.z)
+        if (!this.isElectron) vMesh.castShadow = true
+        vGroup.add(vMesh)
       })
       group.add(vGroup)
+    }
+
+    this._addGroup('busbars', group)
+  }
+
+
+  _buildPrismaticBusbarsFromGLTF(S, P, cell_used, housingH) {
+    const sizeX = cell_used.hauteur_mm
+    const sizeZ = cell_used.largeur_mm
+    const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
+    const stepX = sizeX + this.cellGap
+    const stepZ = sizeZ + this.cellGap
+
+    const posOffZ =  sizeZ * TERM_OFFSET_RATIO
+    const negOffZ = -sizeZ * TERM_OFFSET_RATIO
+
+    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
+    const busbarThickMm = 2.5  // target busbar thickness in scene mm
+    // Busbar sits flush on top of the terminal tabs
+    const busbarY = yCenter + bodyH / 2 + busbarThickMm / 2 + 0.2
+
+    const startX = -(S * stepX) / 2 + stepX / 2
+    const startZ = -(P * stepZ) / 2 + stepZ / 2
+
+    // ── Pre-process GLTF geometry ────────────────────────────────────────────
+    const gltfMeshes = []
+    this._prismaticBusbarGltf.scene.updateMatrixWorld(true)
+    this._prismaticBusbarGltf.scene.traverse(obj => { if (obj.isMesh) gltfMeshes.push(obj) })
+
+    const box = new THREE.Box3()
+    gltfMeshes.forEach(m => box.expandByObject(m))
+    const modelSize   = new THREE.Vector3()
+    const modelCenter = new THREE.Vector3()
+    box.getSize(modelSize)
+    box.getCenter(modelCenter)
+
+    // Terminal base radius (same formula as _buildPrismaticCells)
+    const termRadius = Math.min(sizeX * 0.32, sizeZ * 0.12, 7)
+    // Bar dimensions: X = series pitch + overhang past each terminal; Z = terminal diameter + margin
+    const hBarX   = stepX + termRadius * 2
+    const hBarW   = termRadius * 2 + 2
+    const targetX = hBarX
+    const targetY = busbarThickMm
+    const targetZ = hBarW
+
+    const scaleX = modelSize.x > 0 ? targetX / modelSize.x : 1
+    const scaleY = modelSize.y > 0 ? targetY / modelSize.y : 1
+    const scaleZ = modelSize.z > 0 ? targetZ / modelSize.z : 1
+
+    // Group primitives by material and build merged geometry
+    const matGroups = new Map()
+    gltfMeshes.forEach(m => {
+      const geom = m.geometry.clone()
+      geom.applyMatrix4(m.matrixWorld)
+      const pos = geom.attributes.position
+      for (let i = 0; i < pos.count; i++) {
+        pos.setXYZ(i,
+          (pos.getX(i) - modelCenter.x) * scaleX,
+          (pos.getY(i) - modelCenter.y) * scaleY,
+          (pos.getZ(i) - modelCenter.z) * scaleZ
+        )
+      }
+      pos.needsUpdate = true
+      geom.computeVertexNormals()
+
+      const srcMat = Array.isArray(m.material) ? m.material[0] : m.material
+      let targetMat = null
+      for (const [mat] of matGroups) {
+        if (mat._srcUuid === srcMat.uuid) { targetMat = mat; break }
+      }
+      if (!targetMat) {
+        const cloned = srcMat.clone()
+        cloned._srcUuid = srcMat.uuid
+        const c = cloned.color
+        if (c.r < 0.1 && c.g < 0.1 && c.b < 0.1) {
+          // dark connector part — keep near-black with subtle sheen
+          cloned.metalness = 0.15; cloned.roughness = 0.75
+        } else {
+          // main busbar body — neutral grey, same as plain-geometry variant
+          cloned.color.set('#a0a0a0'); cloned.metalness = 0.85; cloned.roughness = 0.2
+        }
+        matGroups.set(cloned, [])
+        targetMat = cloned
+      }
+      matGroups.get(targetMat).push(geom)
+    })
+
+    const mergedByMat = new Map()
+    matGroups.forEach((geoms, mat) => {
+      const merged = mergeGeometries(geoms, false)
+      geoms.forEach(g => g.dispose())
+      mergedByMat.set(mat, merged)
+    })
+
+    // ── Snake path (same as plain geometry version) ───────────────────────────
+    const snake = []
+    for (let p = P - 1; p >= 0; p--) {
+      const rowInSnake = P - 1 - p
+      if (rowInSnake % 2 === 0) {
+        for (let s = S - 1; s >= 0; s--) snake.push({ s, p })
+      } else {
+        for (let s = 0; s < S; s++) snake.push({ s, p })
+      }
+    }
+
+    const getTermZ = (s, p) => {
+      const flipped = s % 2 === 1
+      const z = startZ + p * stepZ
+      return { posZ: z + (flipped ? negOffZ : posOffZ), negZ: z + (flipped ? posOffZ : negOffZ) }
+    }
+
+    const hBars = []
+    const vBars = []
+    for (let i = 0; i < snake.length - 1; i++) {
+      const a = snake[i], b = snake[i + 1]
+      const tA = getTermZ(a.s, a.p), tB = getTermZ(b.s, b.p)
+      if (a.p === b.p) {
+        const xA = startX + a.s * stepX, xB = startX + b.s * stepX
+        hBars.push({ x: (xA + xB) / 2, z: tA.negZ })
+      } else {
+        const negZ = tA.negZ, posZ = tB.posZ
+        vBars.push({ x: startX + a.s * stepX, z: (negZ + posZ) / 2, lenZ: Math.abs(negZ - posZ) })
+      }
+    }
+
+    const group = new THREE.Group()
+    group.name = 'busbars'
+
+    // Horizontal bars: InstancedMesh
+    if (hBars.length > 0) {
+      mergedByMat.forEach((merged, mat) => {
+        const im = new THREE.InstancedMesh(merged, mat, hBars.length)
+        if (!this.isElectron) { im.castShadow = true; im.receiveShadow = true }
+        hBars.forEach((b, idx) => {
+          im.setMatrixAt(idx, new THREE.Matrix4().makeTranslation(b.x, busbarY, b.z))
+        })
+        im.instanceMatrix.needsUpdate = true
+        group.add(im)
+      })
+    }
+
+    // Vertical bars: rotated 90° Y, Z-length scaled per bar
+    if (vBars.length > 0) {
+      vBars.forEach(b => {
+        const barLen = Math.max(b.lenZ + hBarW, hBarW)
+        const rotY90 = new THREE.Matrix4().makeRotationY(Math.PI / 2)
+        mergedByMat.forEach((merged, mat) => {
+          const geom = merged.clone()
+          const pos  = geom.attributes.position
+          const xAdj = barLen / targetX
+          for (let i = 0; i < pos.count; i++) pos.setX(i, pos.getX(i) * xAdj)
+          pos.needsUpdate = true
+          geom.applyMatrix4(rotY90)
+          geom.computeVertexNormals()
+          const mesh = new THREE.Mesh(geom, mat)
+          mesh.position.set(b.x, busbarY, b.z)
+          if (!this.isElectron) mesh.castShadow = true
+          group.add(mesh)
+        })
+      })
     }
 
     this._addGroup('busbars', group)
@@ -884,7 +1178,7 @@ export class PackAssemblyBuilder {
     if (S < 2) return
 
 
-    const bodyH = cell_used.longueur_mm * 0.95
+    const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
     const stepX = sizeX + this.cellGap
@@ -912,7 +1206,7 @@ export class PackAssemblyBuilder {
 
   _buildPrismaticSidePlates(S, P, cell_used, housingH) {
 
-    const bodyH = cell_used.longueur_mm * 0.95
+    const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
     const sizeX = cell_used.hauteur_mm
     const sizeZ = cell_used.largeur_mm
@@ -963,7 +1257,7 @@ export class PackAssemblyBuilder {
     } else {
       const sizeX = cell_used.hauteur_mm
       const sizeZ = cell_used.largeur_mm
-      const bodyH = cell_used.longueur_mm * 0.95
+      const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
       const stepX = sizeX + this.cellGap
       const stepZ = sizeZ + this.cellGap
       yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
@@ -1079,7 +1373,7 @@ export class PackAssemblyBuilder {
     } else {
       const sizeX = cell_used.hauteur_mm
       const sizeZ = cell_used.largeur_mm
-      const bodyH = cell_used.longueur_mm * 0.95
+      const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
       const termH = Math.max(8, cell_used.longueur_mm * 0.07)
       stepX = sizeX + this.cellGap
       stepZ = sizeZ + this.cellGap
@@ -1156,7 +1450,7 @@ export class PackAssemblyBuilder {
       const sizeZ = cell_used.largeur_mm
       const stepX = sizeX + this.cellGap
       const stepZ = sizeZ + this.cellGap
-      const bodyH = cell_used.longueur_mm * 0.95
+      const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
       const termH = Math.max(8, cell_used.longueur_mm * 0.07)
       const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
       packTop = yCenter + bodyH / 2 + termH + 2.5

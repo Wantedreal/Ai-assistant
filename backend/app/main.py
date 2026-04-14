@@ -66,9 +66,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",   # Vite dev server
-        "http://localhost:3000",   # CRA dev server
-        "http://localhost:80",     # Docker production
-        "*",                       # Development allow-all
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:80",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -180,7 +181,10 @@ def calculate_pack(
         )
 
     # Execute the deterministic core engine
-    result = run_engine(req, cell)
+    try:
+        result = run_engine(req, cell)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return result
 
 
@@ -217,8 +221,11 @@ def generate_report_pdf(
         )
     
     # Execute the calculation
-    result = run_engine(req, cell)
-    
+    try:
+        result = run_engine(req, cell)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     # Generate PDF in memory
     pdf_buffer = generate_pdf_report(req, result, cell)
     

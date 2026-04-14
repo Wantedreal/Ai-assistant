@@ -65,4 +65,4 @@ When something breaks, follow this order :
 > Try one test at a time. Be methodical
 
 # WHAT TO DO NOW
-I want you first to review the code completely then see the 3D ASSEMBLY EXPORT PLAN md file and tell me about your opinion
+I want you to review the code entirely, then I want you to do extensive tests, automated test and also manual test 

@@ -141,7 +141,7 @@ export function CellSelectorCard({
 
         {/* Cell thumbnail */}
         <div className="projects-card__thumb" role="img" aria-label="Cell preview">
-          <img src="/images/Projectscard.png" alt="Cell" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src="./images/Projectscard.png" alt="Cell" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
 
         {/* Spec badges */}
