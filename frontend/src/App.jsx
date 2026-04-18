@@ -76,20 +76,20 @@ export default function App() {
     setCameraPreset(preset)
   }
 
-  // ── Fetch cell catalogue on mount ──
-  useEffect(() => {
-    ;(async () => {
-      try {
-        const { data } = await apiService.getCells()
-        setCells(data)
-        if (data.length > 0) setSelectedId(data[0].id)
-      } catch (e) {
-        setApiError('Cannot reach the API. Make sure FastAPI is running on port 8000.')
-      } finally {
-        setLoading(false)
-      }
-    })()
+  // ── Fetch cell catalogue (also called after import/sync) ──
+  const loadCells = useCallback(async () => {
+    try {
+      const { data } = await apiService.getCells()
+      setCells(data)
+      if (data.length > 0) setSelectedId(prev => prev ?? data[0].id)
+    } catch (e) {
+      setApiError('Cannot reach the API. Make sure FastAPI is running on port 8000.')
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => { loadCells() }, [loadCells])
 
   // ── Zoom-to-fit: scale down when viewport is shorter than content ──
   const wrapperRef = useRef(null)
@@ -214,6 +214,7 @@ export default function App() {
             cell={cell}
             masseKg={masseKg}
             swellingLabel={swellingLabel}
+            onReloadCells={loadCells}
           />
 
           {/* ── CENTER — Constraints form ── */}

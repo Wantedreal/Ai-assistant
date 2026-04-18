@@ -3,7 +3,7 @@
  * Securely exposes limited APIs to the renderer process
  */
 
-const { contextBridge, ipcMain, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // Expose safe APIs to React frontend
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -25,5 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (event, ...args) => listener(...args))
     }
+  },
+
+  // Returns the real filesystem path for a File object (Electron only)
+  getFilePath: (file) => {
+    try { return webUtils.getPathForFile(file) } catch { return null }
   },
 })

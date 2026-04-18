@@ -584,6 +584,26 @@ h6 {
   letter-spacing: var(--tracking-tight);
 }
 
+/* ── DB import/sync buttons in CellSelectorCard bottom ── */
+.db-action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px 4px;
+}
+
+.db-sync-msg {
+  margin: 0 16px 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.db-sync-msg--ok  { background: #14532d44; color: #4ade80; border: 1px solid #166534; }
+.db-sync-msg--err { background: #7f1d1d44; color: #f87171; border: 1px solid #991b1b; }
+
 .projects-card__arrow {
   color: var(--color-text);
   font-size: var(--text-base);

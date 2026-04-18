@@ -32,6 +32,22 @@ export const apiService = {
   exportStep: (payload) => api.post('/export/step', payload, {
     responseType: 'blob',
   }),
+
+  // Import cell catalogue from uploaded .xlsx file
+  importCells: (file, sourcePath) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (sourcePath) form.append('source_path', sourcePath)
+    return api.post('/cells/import', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  // Re-import from the last saved source path
+  syncCells: () => api.post('/cells/sync'),
+
+  // Get saved source path
+  getImportConfig: () => api.get('/cells/import/config'),
 }
 
 export default api

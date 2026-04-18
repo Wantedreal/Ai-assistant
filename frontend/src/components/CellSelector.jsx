@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useRef } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { apiService } from '../services/api'
+import CellSchematic from './CellSchematic'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (v, unit = '', d = 2) =>
@@ -125,7 +126,60 @@ export function CellSelectorCard({
   cell,
   masseKg,
   swellingLabel,
+  onReloadCells,
 }) {
+  const fileInputRef = useRef(null)
+  const [importing, setImporting] = useState(false)
+  const [syncing, setSyncing]     = useState(false)
+  const [syncMsg, setSyncMsg]     = useState(null)   // { ok: bool, text: string }
+  const [hasSyncPath, setHasSyncPath] = useState(false)
+
+  useEffect(() => {
+    apiService.getImportConfig()
+      .then(({ data }) => setHasSyncPath(!!data.source_path))
+      .catch(() => {})
+  }, [])
+
+  const showMsg = (ok, text) => {
+    setSyncMsg({ ok, text })
+    setTimeout(() => setSyncMsg(null), 3500)
+  }
+
+  const handleImportClick = () => fileInputRef.current?.click()
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    const sourcePath = window.electronAPI?.getFilePath?.(file) ?? null
+
+    setImporting(true)
+    try {
+      const { data } = await apiService.importCells(file, sourcePath)
+      if (sourcePath) setHasSyncPath(true)
+      showMsg(true, `Imported ${data.imported} cells`)
+      onReloadCells?.()
+    } catch (err) {
+      showMsg(false, err.response?.data?.detail ?? 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      const { data } = await apiService.syncCells()
+      showMsg(true, `Synced ${data.imported} cells`)
+      onReloadCells?.()
+    } catch (err) {
+      showMsg(false, err.response?.data?.detail ?? 'Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
       <div className="projects-card">
         <div className="projects-card__header">
@@ -139,9 +193,9 @@ export function CellSelectorCard({
           onSelectCell={onSelectCell}
         />
 
-        {/* Cell thumbnail */}
-        <div className="projects-card__thumb" role="img" aria-label="Cell preview">
-          <img src="./images/Projectscard.png" alt="Cell" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {/* Cell schematic */}
+        <div className="projects-card__thumb" role="img" aria-label="Cell schematic">
+          <CellSchematic cell={cell} />
         </div>
 
         {/* Spec badges */}
@@ -177,6 +231,42 @@ export function CellSelectorCard({
             </div>
           )}
         </div>
+        {/* Import / Sync buttons */}
+        <div className="db-action-buttons">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx"
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+          <button
+            type="button"
+            className="modern-btn modern-btn-primary"
+            style={{ width: '100%' }}
+            onClick={handleImportClick}
+            disabled={importing}
+          >
+            {importing ? 'Importing...' : 'Import'}
+          </button>
+          <button
+            type="button"
+            className="modern-btn modern-btn-secondary"
+            style={{ width: '100%' }}
+            onClick={handleSync}
+            disabled={syncing || !hasSyncPath}
+            title={!hasSyncPath ? 'Import a file first to enable Sync' : undefined}
+          >
+            {syncing ? 'Syncing...' : 'Sync'}
+          </button>
+        </div>
+
+        {syncMsg && (
+          <div className={`db-sync-msg ${syncMsg.ok ? 'db-sync-msg--ok' : 'db-sync-msg--err'}`}>
+            {syncMsg.ok ? '✓' : '✗'} {syncMsg.text}
+          </div>
+        )}
+
         <ul className="projects-list" role="list" />
       </div>
   )

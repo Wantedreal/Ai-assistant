@@ -14,11 +14,13 @@ Run:
     uvicorn app.main:app --reload --port 8000
 """
 
-from fastapi import FastAPI, HTTPException, Depends
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from app.db.database import engine, get_db, init_db
 from app.models.cellule import Cellule
@@ -26,6 +28,7 @@ from app.schemas.battery import CalculationRequest, CalculationResult, CellRead
 from app.core.engine import run_engine
 from app.pdf import generate_pdf_report
 from app.step_export import generate_step_file
+from app.importer import import_from_bytes, import_from_path, get_source_path, save_source_path
 
 # ── Create tables on startup (idempotent — safe to call multiple times) ───────
 init_db()
@@ -278,6 +281,72 @@ def export_step(
         media_type="application/step",
         headers={"Content-Disposition": "attachment; filename=battery_pack.step"}
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DATABASE IMPORT / SYNC
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post(
+    "/api/v1/cells/import",
+    tags=["Catalogue"],
+    summary="Import cell catalogue from uploaded Excel file",
+)
+async def import_cells(
+    file: UploadFile = File(...),
+    source_path: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload an .xlsx file to replace the entire cell catalogue.
+    If source_path is provided (Electron only), it is saved for future Sync calls.
+    """
+    content = await file.read()
+    try:
+        count = import_from_bytes(content, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if source_path:
+        save_source_path(source_path)
+    return {"imported": count, "source_path": source_path}
+
+
+@app.post(
+    "/api/v1/cells/sync",
+    tags=["Catalogue"],
+    summary="Re-import from the last configured source path",
+)
+def sync_cells(db: Session = Depends(get_db)):
+    """
+    Re-reads the Excel file from the path saved during the last Import.
+    Requires at least one successful Import with a source_path first.
+    """
+    path = get_source_path()
+    if not path:
+        raise HTTPException(
+            status_code=400,
+            detail="No source path configured — use Import first."
+        )
+    if not Path(path).exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Source file not found at: {path}"
+        )
+    try:
+        count = import_from_path(path, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"imported": count, "source_path": path}
+
+
+@app.get(
+    "/api/v1/cells/import/config",
+    tags=["Catalogue"],
+    summary="Get saved source file path",
+)
+def get_import_config():
+    """Returns the source .xlsx path saved from the last Import, or null."""
+    return {"source_path": get_source_path()}
 
 
 # ── Root and fallback endpoints ───────────────────────────────────────────────
