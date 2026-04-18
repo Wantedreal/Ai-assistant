@@ -25,6 +25,7 @@ from app.models.cellule import Cellule
 from app.schemas.battery import CalculationRequest, CalculationResult, CellRead
 from app.core.engine import run_engine
 from app.pdf import generate_pdf_report
+from app.step_export import generate_step_file
 
 # ── Create tables on startup (idempotent — safe to call multiple times) ───────
 init_db()
@@ -234,6 +235,48 @@ def generate_report_pdf(
         pdf_buffer,
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=battery_report.pdf"}
+    )
+
+
+@app.post(
+    "/api/v1/export/step",
+    tags=["Moteur de Calcul"],
+    summary="Export battery pack as STEP file",
+    responses={
+        200: {"description": "STEP file (AP214)"},
+        404: {"description": "Cell not found"},
+        422: {"description": "Invalid input data"},
+    },
+)
+def export_step(
+    req: CalculationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a parametric STEP file of the full battery pack assembly.
+
+    Geometry matches the 3D viewer exactly — housing, cells, terminals,
+    busbars, brackets / insulation cards / side plates, BMS, balance wires
+    and main cables. Importable into SolidWorks, CATIA, Fusion 360, FreeCAD.
+    """
+    cell = db.query(Cellule).filter(Cellule.id == req.cell_id).first()
+    if not cell:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Cell id={req.cell_id} not found in catalogue."
+        )
+
+    try:
+        result = run_engine(req, cell)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    step_buf = generate_step_file(req, result, cell)
+
+    return StreamingResponse(
+        step_buf,
+        media_type="application/step",
+        headers={"Content-Disposition": "attachment; filename=battery_pack.step"}
     )
 
 

@@ -27,6 +27,11 @@ export const apiService = {
   generatePdf: (payload) => api.post('/calculate/pdf', payload, {
     responseType: 'blob',
   }),
+
+  // Export STEP file
+  exportStep: (payload) => api.post('/export/step', payload, {
+    responseType: 'blob',
+  }),
 }
 
 export default api

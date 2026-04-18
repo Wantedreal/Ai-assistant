@@ -7,6 +7,9 @@ __pycache__/
 # PyInstaller build cache (regenerated on every build)
 backend/build/
 
+# Electron installer output — large binary artifacts, not source
+frontend/release/
+
 # Excel lock files (created when file is open in Excel)
 ~$*.xlsx
 ~$*.xls

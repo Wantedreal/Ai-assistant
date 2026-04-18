@@ -8,7 +8,7 @@ import ExportPanel from './ExportPanel.jsx'
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI != null
 
-export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange }) {
+export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange, stepPayload = null }) {
   const mountRef = useRef(null)
   const controlsRef = useRef(null)
   const cameraRef = useRef(null)
@@ -280,7 +280,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
       {/* Export panel (fullscreen only) */}
       {isFullscreen && hasValidResult && (
-        <ExportPanel builderRef={builderRef} />
+        <ExportPanel builderRef={builderRef} stepPayload={stepPayload} />
       )}
 
       {/* Layer toggle panel (fullscreen only) */}

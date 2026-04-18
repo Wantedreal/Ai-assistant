@@ -32,9 +32,10 @@ export default function App() {
   const [selectedId, setSelectedId]   = useState(null)
   const [loading, setLoading]         = useState(true)
   const [apiError, setApiError]       = useState(null)
-  const [calculating, setCalculating] = useState(false)
-  const [calcError, setCalcError]     = useState(null)
-  const [result, setResult]           = useState(null)
+  const [calculating, setCalculating]   = useState(false)
+  const [calcError, setCalcError]       = useState(null)
+  const [result, setResult]             = useState(null)
+  const [lastPayload, setLastPayload]   = useState(null)
   const [fullscreenMode, setFullscreenMode] = useState(false)
   const [cameraPreset, setCameraPreset] = useState('free')
 
@@ -159,6 +160,7 @@ export default function App() {
     try {
       const { data } = await apiService.calculate(payload)
       setResult(data)
+      setLastPayload(payload)
     } catch (e) {
       const detail = e?.response?.data?.detail
       setCalcError(
@@ -234,6 +236,7 @@ export default function App() {
                   isFullscreen={false}
                   cellGap={toNum(form.cell_gap_mm, 0)}
                   onCellGapChange={v => handleFieldChange('cell_gap_mm', v)}
+                  stepPayload={lastPayload}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -355,6 +358,7 @@ export default function App() {
                   isFullscreen={true}
                   cellGap={toNum(form.cell_gap_mm, 0)}
                   onCellGapChange={v => handleFieldChange('cell_gap_mm', v)}
+                  stepPayload={lastPayload}
                 />
               </Suspense>
             </ErrorBoundary>

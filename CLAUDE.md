@@ -87,6 +87,7 @@ Output installer is fully self-contained — no Python or Node.js needed on targ
 | GET | `/api/v1/cells/{id}` | Single cell |
 | POST | `/api/v1/calculate` | Core sizing calculation |
 | POST | `/api/v1/calculate/pdf` | PDF report generation |
+| POST | `/api/v1/export/step` | STEP file export (CadQuery) |
 
 Swagger UI available at `http://localhost:8000/docs` when backend is running.
 
@@ -197,9 +198,11 @@ See `/reference_3D` for reference images of the target assembly.
 - Verdict moved to `CellActionCard` (`social-card`) as a compact inline colored text line (✓ ACCEPT / ✗ REJECT — reason), shown immediately after Calculate.
 - `projects-card` overflow changed from `hidden` → `overflow-y: auto` so cell selector content scrolls on small windows.
 
+- STEP export (`backend/app/step_export.py`): `POST /api/v1/export/step` — CadQuery parametric STEP of full cell array (cells, terminals, busbars, brackets/insulation cards/side plates). Housing, BMS and cables intentionally excluded from STEP (cleaner for CAD integration). Performance: `Shape.moved()` + `Compound.makeCompound()` pattern — one OCC solid per unique shape, N cheap location-transforms (~60× faster than individual solids). Typical generation time: 1–7 s depending on cell count. Colors embedded as `COLOUR_RGB` in AP214; visible in SolidWorks/CATIA/Fusion 360/FreeCAD.
+- STEP button in `ExportPanel.jsx` — enabled after first Calculate (uses `lastPayload` stored in `App.jsx` state, forwarded via `PackViewer3D` → `ExportPanel`). `api.js` has `exportStep(payload)` → `responseType: 'blob'`.
+
 **uncompleted:**
 - **Phase 6** — EVA foam insulation wrap + heat shrink sleeve over cell array (cylindrical and prismatic)
-- **Phase 9** — Backend STEP export via CadQuery: new endpoint `POST /api/v1/export/step`, parametric solid from housing + cell array geometry
 - **Option 4 — Housing-geometry-based positioning**: BMS, cables, and harness should attach to housing walls (flush against inner face) rather than to cell array bounds. Requires passing `housingL, housingW` into `buildBMS()`. BMS Z = `housingW / 2 - WALL_MM - bmsThick / 2`; harness Y = `housingH / 2 - 4`; cable exits at `housingH / 2`.
 
 ## Layout Notes

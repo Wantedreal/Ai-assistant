@@ -588,23 +588,23 @@ export class PackAssemblyBuilder {
         wrapMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, yWrap, z))
         capMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, yCap, z))
 
-        // QR Code
-        qrMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.2, z))
+        // QR Code — raised 0.3mm above cap top face to avoid Z-fighting
+        qrMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.5, z))
 
-        // Insulator Rings (stark contrast)
-        posRingMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.75, pZ))
-        negRingMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 0.75, nZ))
+        // Insulator Rings (stark contrast) — bottom at termY+0.3, clear of cap
+        posRingMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 1.05, pZ))
+        negRingMesh.setMatrixAt(c, new THREE.Matrix4().makeTranslation(x, termY + 1.05, nZ))
 
-        // POS Terminal
-        termBaseMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 1.25, pZ))
-        termStudMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 6.0, pZ))
-        nutMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 4.25, pZ))
+        // POS Terminal — base bottom at termY+0.3
+        termBaseMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 1.55, pZ))
+        termStudMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 6.3, pZ))
+        nutMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 4.55, pZ))
         t++
-        
-        // NEG Terminal
-        termBaseMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 1.25, nZ))
-        termStudMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 6.0, nZ))
-        nutMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 4.25, nZ))
+
+        // NEG Terminal — base bottom at termY+0.3
+        termBaseMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 1.55, nZ))
+        termStudMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 6.3, nZ))
+        nutMesh.setMatrixAt(t, new THREE.Matrix4().makeTranslation(x, termY + 4.55, nZ))
         t++
 
         for (let v = 0; v < basePts.length; v += 3) {
@@ -868,7 +868,11 @@ export class PackAssemblyBuilder {
 
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
     const busbarThickness = 1.0
-    const busbarY = yCenter + bodyH / 2 + 2.25 + busbarThickness / 2
+    // termY = yCenter + bodyH/2 + 2 (cap center+1). Terminal base top = termY + 1.55 + 1.25 = termY + 2.8
+    // Busbar sits above terminal base top with 0.5mm clearance
+    const termYLocal = yCenter + bodyH / 2 + 2
+    const termBaseTop = termYLocal + 2.8
+    const busbarY = termBaseTop + 0.5 + busbarThickness / 2
 
     // Neutral grey — brushed aluminium / steel busbar
     const copperMat = this.isElectron
@@ -881,9 +885,10 @@ export class PackAssemblyBuilder {
     const startX = -(S * stepX) / 2 + stepX / 2
     const startZ = -(P * stepZ) / 2 + stepZ / 2
 
-    // Bar dimensions: extend past each terminal centre so posts are fully seated
-    const hBarW = termRadius * 2 + 2      // Z (or X for vBars) — covers terminal base diameter
-    const hBarX = stepX + termRadius * 2  // X width of horizontal bars
+    // Bar dimensions: span both terminal positions so bars look uniform across all rows
+    const hBarW = posOffZ * 2 + termRadius * 2  // Z width of horiz bars — covers neg→pos span
+    const hBarX = stepX + termRadius * 2        // X width of horizontal bars
+    const vBarW = termRadius * 2 + 2            // X width of vertical (row-transition) bars
 
     // Snake path: within each parallel row, bars go alternately R→L / L→R.
     // A single vertical bar at each row-transition edge creates one Pack+ and one Pack-.
@@ -910,7 +915,8 @@ export class PackAssemblyBuilder {
       const tA = getTermZ(a.s, a.p), tB = getTermZ(b.s, b.p)
       if (a.p === b.p) {
         const xA = startX + a.s * stepX, xB = startX + b.s * stepX
-        hBars.push({ x: (xA + xB) / 2, z: tA.negZ })
+        // Centre bar at cell-row Z — bars are wide enough to cover both terminal offsets
+        hBars.push({ x: (xA + xB) / 2, z: startZ + a.p * stepZ })
       } else {
         const negZ = tA.negZ, posZ = tB.posZ
         vBars.push({ x: startX + a.s * stepX, z: (negZ + posZ) / 2, len: Math.abs(negZ - posZ) })
@@ -933,8 +939,8 @@ export class PackAssemblyBuilder {
     if (vBars.length > 0) {
       const vGroup = new THREE.Group()
       vBars.forEach(b => {
-        const barLen = Math.max(b.len + hBarW, hBarW)
-        const vGeom = new THREE.BoxGeometry(hBarW, busbarThickness, barLen)
+        const barLen = Math.max(b.len + vBarW, vBarW)
+        const vGeom = new THREE.BoxGeometry(vBarW, busbarThickness, barLen)
         const vMesh = new THREE.Mesh(vGeom, copperMat)
         vMesh.position.set(b.x, busbarY, b.z)
         if (!this.isElectron) vMesh.castShadow = true
