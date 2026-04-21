@@ -620,7 +620,65 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
         ]))
 
     story.append(t_margin)
-    story.append(Spacer(1, 8*mm))
+    story.append(Spacer(1, 5*mm))
+
+    # ── BMS Specification ─────────────────────────────────────────────────────
+    if result.bms_v_min_pack is not None:
+        story.append(Paragraph('5.4  BMS specification', st['subsection']))
+
+        def _bms_fmt(v, unit='', d=1):
+            return f'{v:.{d}f} {unit}'.strip() if v is not None else '—'
+
+        charge_str = _bms_fmt(result.bms_i_charge_a, 'A')
+        if result.bms_i_charge_estimated:
+            charge_str += ' (est. — c_rate_max_charge not in dataset)'
+
+        discharge_cutoff = (f'{result.bms_discharge_cutoff_temp_c:.0f} °C'
+                            if result.bms_discharge_cutoff_temp_c is not None
+                            else '— (temp_min_c not in dataset)')
+
+        bms_rows = [
+            ['Parameter', 'Value', 'Source'],
+            ['Voltage window',
+             f'{result.bms_v_min_pack:.1f} V  →  {result.bms_v_max_pack:.1f} V',
+             'S × V_min/max (chemistry constants)'],
+            ['Continuous discharge current',
+             f'{result.bms_i_continuous_a:.1f} A',
+             'P × I_cell_max'],
+            ['Max charge current',
+             charge_str,
+             'P × c_rate_max_charge × C'],
+            ['Balance channels',
+             str(result.bms_balance_channels),
+             '= S'],
+            ['Balance current / channel',
+             f'{result.bms_balance_current_a:.3f} A',
+             'C × 2 % (standard floor)'],
+            ['Temperature sensors',
+             str(result.bms_temp_sensors),
+             '⌈ S×P / 12 ⌉'],
+            ['Charge cutoff temperature',
+             (f'{result.bms_charge_cutoff_temp_c} °C'
+              if result.bms_charge_cutoff_temp_c is not None else '—'),
+             'Chemistry constant'],
+            ['Discharge cutoff temperature',
+             discharge_cutoff,
+             'Cell temp_min_c'],
+            ['Suggested BMS family',
+             result.bms_suggestion or '—',
+             'Voltage + current lookup'],
+        ]
+        col_w_bms = [65*mm, 55*mm, 50*mm]
+        t_bms = Table(bms_rows, colWidths=col_w_bms)
+        t_bms.setStyle(_ts())
+        story.append(t_bms)
+        story.append(Paragraph(
+            'Note: values marked "est." use default assumptions — '
+            'verify against selected BMS datasheet before final design.',
+            st['note']))
+        story.append(Spacer(1, 5*mm))
+
+    story.append(Spacer(1, 3*mm))
 
     # ── Verdict ───────────────────────────────────────────────────────────────
     v_color = _GREEN_OK if is_ok else _RED_KO
@@ -642,6 +700,97 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
 
     if result.justification:
         story.append(Paragraph(result.justification, st['normal']))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 6 — Performance Estimate (Phase 2)
+    # ══════════════════════════════════════════════════════════════════════════
+    has_derating = result.c_rate_actual  is not None
+    has_lifetime = result.lifetime_years is not None
+
+    if has_derating or has_lifetime:
+        story.append(Spacer(1, 6*mm))
+        story.append(Paragraph('6. PERFORMANCE ESTIMATE', st['section']))
+        story.append(Paragraph(
+            'Engineering estimates based on chemistry-level models. '
+            'Verify against manufacturer discharge curves and cycle life data for final design.',
+            st['note']))
+        story.append(Spacer(1, 4*mm))
+
+        k_map  = {'NMC': 0.33, 'LFP': 0.10, 'NCA': 0.40, 'LTO': 0.04, 'LCO': 0.25}
+        exp_map = {'NMC': 1.5, 'LFP': 1.8, 'NCA': 1.3, 'LTO': 2.2, 'LCO': 1.5}
+        k    = k_map.get(cell.chimie, 0.20)
+        cpd  = getattr(req, 'cycles_per_day', 1.0) or 1.0
+
+        # ── 6.1 C-rate derating ───────────────────────────────────────────────
+        if has_derating:
+            story.append(Paragraph('6.1  C-rate derating', st['subsection']))
+            story.append(Paragraph(
+                'At high discharge rates, internal resistance losses reduce deliverable capacity. '
+                'The quadratic derating model (valid for C-rates between 20% and 80% of rated maximum):',
+                st['normal']))
+
+            I_cell = req.courant_cible_a / P
+            ratio  = result.c_rate_actual / cell.c_rate_max_discharge if cell.c_rate_max_discharge else 0
+
+            story.extend(formula_block(
+                'I_cell = I_target / P',
+                f'I_cell = {req.courant_cible_a:.1f} / {P} = {I_cell:.2f} A',
+                f'I_cell = {I_cell:.2f} A per cell'))
+
+            story.extend(formula_block(
+                'C_actual = I_cell / C_nominal',
+                f'C_actual = {I_cell:.2f} / {cell.capacite_ah:.2f} = {result.c_rate_actual:.3f} C',
+                f'C_actual = {result.c_rate_actual:.3f} C  '
+                f'{"(⚠ above 80% of C_max — estimate less reliable)" if result.c_rate_warning else "(within reliable range)"}'))
+
+            if result.derating_factor_pct == 0:
+                story.extend(formula_block(
+                    'derating_factor = 1 − k × (C_actual / C_max)²',
+                    f'ratio = {result.c_rate_actual:.3f} / {cell.c_rate_max_discharge:.1f} = {ratio:.3f}  <  0.20',
+                    'derating_factor = 0 %  (C-rate below 20% of maximum — negligible derating)',
+                    f'k = {k}  ({cell.chimie or "unknown"} chemistry estimate)'))
+            else:
+                story.extend(formula_block(
+                    'derating_factor = 1 − k × (C_actual / C_max)²',
+                    f'derating = {k} × ({result.c_rate_actual:.3f} / {cell.c_rate_max_discharge:.1f})²'
+                    f' = {k} × {ratio**2:.4f} = {abs(result.derating_factor_pct/100):.4f}',
+                    f'derating_factor = {result.derating_factor_pct:.1f} %',
+                    f'k = {k}  ({cell.chimie or "unknown"} chemistry estimate, PyBaMM-validated for NMC)'))
+
+                story.extend(formula_block(
+                    'C_effective = C_nominal × (1 + derating_factor/100)',
+                    f'C_effective = {cell.capacite_ah:.2f} × (1 − {abs(result.derating_factor_pct/100):.4f})',
+                    f'C_effective = {result.c_effective_ah:.3f} Ah per cell'))
+
+            story.append(Spacer(1, 3*mm))
+
+        # ── 6.2 Cycle life and lifetime ───────────────────────────────────────
+        if has_lifetime:
+            exp = exp_map.get(cell.chimie, 1.5)
+            story.append(Paragraph('6.2  Cycle life and pack lifetime', st['subsection']))
+            story.append(Paragraph(
+                'The Wöhler power law relates cycle life to depth of discharge. '
+                'Shallower cycling stress results in exponentially longer life:',
+                st['normal']))
+
+            dod_ratio = cell.dod_reference_pct / req.depth_of_discharge
+
+            story.extend(formula_block(
+                'N_dod = N_ref × (DoD_ref / DoD_operating) ^ α',
+                f'N_dod = {cell.cycle_life:,} × ({cell.dod_reference_pct:.0f} / {req.depth_of_discharge:.0f}) ^ {exp}'
+                f' = {cell.cycle_life:,} × {dod_ratio:.4f} ^ {exp}'
+                f' = {cell.cycle_life:,} × {dod_ratio**exp:.4f}',
+                f'N_dod = {result.cycle_life_at_dod:,} cycles at {req.depth_of_discharge:.0f}% DoD',
+                f'α = {exp}  ({cell.chimie or "unknown"} chemistry aging exponent, literature value)'))
+
+            story.extend(formula_block(
+                'Lifetime = N_dod / (cycles_per_day × 365)',
+                f'Lifetime = {result.cycle_life_at_dod:,} / ({cpd:.1f} × 365)'
+                f' = {result.cycle_life_at_dod:,} / {cpd*365:.0f}',
+                f'Lifetime = {result.lifetime_years:.1f} years at {cpd:.1f} cycle/day',
+                f'Uncertainty range: {result.lifetime_years_low:.1f} – {result.lifetime_years_high:.1f} years  (±30% on aging exponent)'))
+
+            story.append(Spacer(1, 3*mm))
 
     # ── Build ─────────────────────────────────────────────────────────────────
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)

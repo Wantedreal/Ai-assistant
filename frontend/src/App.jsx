@@ -53,6 +53,7 @@ export default function App() {
     config_mode:        'auto',
     manual_series:      '',
     manual_parallel:    '',
+    cycles_per_day:     1,
   })
 
   const handleFieldChange = (key, val) => setForm(f => ({ ...f, [key]: val }))
@@ -151,6 +152,7 @@ export default function App() {
       depth_of_discharge: toNum(form.depth_of_discharge, 80),
       config_mode:        form.config_mode,
       cell_gap_mm:        toNum(form.cell_gap_mm, 0),
+      cycles_per_day:     toNum(form.cycles_per_day, 1),
       ...(form.config_mode === 'manual' && {
         manual_series:   parseInt(form.manual_series)   || undefined,
         manual_parallel: parseInt(form.manual_parallel) || undefined,
@@ -215,6 +217,7 @@ export default function App() {
             masseKg={masseKg}
             swellingLabel={swellingLabel}
             onReloadCells={loadCells}
+            form={form}
           />
 
           {/* ── CENTER — Constraints form ── */}

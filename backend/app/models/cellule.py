@@ -4,24 +4,6 @@ from app.db.database import Base
 
 
 class Cellule(Base):
-    """
-ORM model for the `cellules` table.
-Matches the database schema with all battery cell specifications.
-
-Columns:
-  - id: Primary key (auto-increment)
-  - nom: Product name/reference (e.g., "INR18650-35E")
-  - longueur_mm: Length in millimeters
-  - largeur_mm: Width in millimeters
-  - hauteur_mm: Height/thickness in millimeters
-  - masse_g: Mass in grams
-  - tension_nominale: Nominal voltage in Volts
-  - capacite_ah: Capacity in Amperes-hour
-  - courant_max_a: Maximum discharge current in Amperes
-  - type_cellule: Cell format (Pouch, Cylindrical, Prismatic)
-  - taux_swelling_pct: Swelling rate percentage
-  - diameter_mm: Diameter in millimeters (only applicable for cylindrical cells)
-"""
     __tablename__ = "cellules"
 
     id                = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -43,11 +25,23 @@ Columns:
     # Geometry & safety
     type_cellule      = Column(String(50), nullable=False, default="Pouch")
     taux_swelling_pct = Column(Float, nullable=False, default=0.08)
-    diameter_mm       = Column(Float, nullable=True)  # Only for cylindrical cells
+    diameter_mm       = Column(Float, nullable=True)
+
+    # Phase 1 — extended cell data (all nullable: existing cells keep working)
+    fabricant               = Column(String(100), nullable=True)   # manufacturer name
+    chimie                  = Column(String(20),  nullable=True)   # NMC, LFP, NCA, LTO, LCO
+    cycle_life              = Column(Integer,      nullable=True)   # rated cycles
+    dod_reference_pct       = Column(Float,        nullable=True)   # DoD at which cycle_life is rated (0–100)
+    c_rate_max_discharge    = Column(Float,        nullable=True)   # max continuous discharge C-rate
+    c_rate_max_charge       = Column(Float,        nullable=True)   # max continuous charge C-rate
+    energie_volumique_wh_l  = Column(Float,        nullable=True)   # volumetric energy density (Wh/L)
+    eol_capacity_pct        = Column(Float,        nullable=True)   # capacity at end-of-life (%)
+    energie_massique_wh_kg  = Column(Float,        nullable=True)   # gravimetric energy density (Wh/kg)
+    cutoff_voltage_v        = Column(Float,        nullable=True)   # discharge cutoff voltage (V)
 
     def __repr__(self) -> str:
         return (
             f"<Cellule id={self.id} nom='{self.nom}' "
-            f"{self.longueur_mm}×{self.largeur_mm}×{self.hauteur_mm}mm "
+            f"{self.longueur_mm}x{self.largeur_mm}x{self.hauteur_mm}mm "
             f"{self.tension_nominale}V {self.capacite_ah}Ah>"
         )

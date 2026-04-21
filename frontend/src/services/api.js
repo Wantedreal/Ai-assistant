@@ -48,6 +48,12 @@ export const apiService = {
 
   // Get saved source path
   getImportConfig: () => api.get('/cells/import/config'),
+
+  // Recommend top 5 cells for given constraints
+  recommendCells: (payload) => api.post('/cells/recommend', payload),
+
+  // AI chemistry explainer
+  explainResult: (payload) => api.post('/explain', payload),
 }
 
 export default api

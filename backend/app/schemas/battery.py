@@ -50,6 +50,18 @@ class CellRead(BaseModel):
     type_cellule: str
     taux_swelling_pct: float
 
+    # Phase 1 extended fields (nullable)
+    fabricant:              Optional[str]   = None
+    chimie:                 Optional[str]   = None
+    cycle_life:             Optional[int]   = None
+    dod_reference_pct:      Optional[float] = None
+    c_rate_max_discharge:   Optional[float] = None
+    c_rate_max_charge:      Optional[float] = None
+    energie_volumique_wh_l: Optional[float] = None
+    eol_capacity_pct:       Optional[float] = None
+    energie_massique_wh_kg: Optional[float] = None
+    cutoff_voltage_v:       Optional[float] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -81,6 +93,9 @@ class CalculationRequest(BaseModel):
     # Mechanical spacing
     cell_gap_mm: float = Field(default=0.0, ge=0.0, description="Mechanical gap between adjacent cells in mm")
 
+    # Phase 2 — lifetime estimate
+    cycles_per_day: float = Field(default=1.0, gt=0, description="Expected full cycles per day (default 1)")
+
 
 class CalculationResult(BaseModel):
     """Response payload from calculation engine"""
@@ -108,3 +123,87 @@ class CalculationResult(BaseModel):
     validation_errors: List[str] = Field(default_factory=list, description="List of constraint violations")
     config_mode: str = Field(..., description="Configuration mode used")
     cell_used: CellRead = Field(..., description="Cell specifications used")
+
+    # Phase 2 — C-rate derating (informational only, does not affect verdict)
+    c_rate_actual:       Optional[float] = Field(None, description="Actual C-rate per cell")
+    c_rate_warning:      Optional[bool]  = Field(None, description="True if C-rate exceeds reliable formula range")
+    derating_factor_pct: Optional[float] = Field(None, description="Capacity loss % due to C-rate (negative value)")
+    c_effective_ah:      Optional[float] = Field(None, description="Effective capacity per cell after derating")
+
+    # Phase 2 — Lifetime estimation (informational only)
+    cycle_life_at_dod:   Optional[int]   = Field(None, description="Cycle life adjusted to operating DoD")
+    lifetime_years:      Optional[float] = Field(None, description="Estimated pack lifetime in years")
+    lifetime_years_low:  Optional[float] = Field(None, description="Pessimistic lifetime bound (−30%)")
+    lifetime_years_high: Optional[float] = Field(None, description="Optimistic lifetime bound (+30%)")
+
+    # Phase 6 — BMS specification (informational)
+    bms_v_min_pack:           Optional[float] = Field(None, description="Pack minimum voltage (V)")
+    bms_v_max_pack:           Optional[float] = Field(None, description="Pack maximum voltage (V)")
+    bms_i_continuous_a:       Optional[float] = Field(None, description="Continuous discharge current (A)")
+    bms_i_charge_a:           Optional[float] = Field(None, description="Max charge current (A)")
+    bms_i_charge_estimated:   Optional[bool]  = Field(None, description="True if charge current used default 0.5C")
+    bms_balance_channels:     Optional[int]   = Field(None, description="Number of balance channels (= S)")
+    bms_balance_current_a:    Optional[float] = Field(None, description="Balance current per channel (A)")
+    bms_temp_sensors:         Optional[int]   = Field(None, description="Recommended temperature sensor count")
+    bms_charge_cutoff_temp_c: Optional[int]   = Field(None, description="Min charge temperature (°C)")
+    bms_discharge_cutoff_temp_c: Optional[float] = Field(None, description="Min discharge temperature (°C)")
+    bms_suggestion:           Optional[str]   = Field(None, description="Suggested BMS product family")
+
+
+# ── Phase 3 — Cell Recommender ────────────────────────────────────────────────
+
+class RecommendRequest(BaseModel):
+    """Request payload for cell recommendation — same constraints as CalculationRequest, no cell_id"""
+    courant_cible_a:    float           = Field(..., gt=0)
+    energie_cible_wh:   Optional[float] = Field(None, gt=0)
+    tension_cible_v:    Optional[float] = Field(None, gt=0)
+    housing_l:          float           = Field(..., gt=0)
+    housing_l_small:    float           = Field(..., gt=0)
+    housing_h:          float           = Field(..., gt=0)
+    marge_mm:           float           = Field(default=15.0, ge=0)
+    cell_gap_mm:        float           = Field(default=0.0, ge=0)
+    depth_of_discharge: float           = Field(default=80.0, ge=1.0, le=100.0)
+    config_mode:        ConfigModeEnum  = Field(default=ConfigModeEnum.AUTO)
+    manual_series:      Optional[int]   = Field(None, gt=0)
+    manual_parallel:    Optional[int]   = Field(None, gt=0)
+    cycles_per_day:     float           = Field(default=1.0, gt=0)
+
+
+class CellMatch(BaseModel):
+    cell:           CellRead
+    nb_serie:       int
+    nb_parallele:   int
+    total_cells:    int
+    fill_ratio_pct: float
+    margin_l_mm:    float
+    margin_w_mm:    float
+    margin_h_mm:    float
+    near_miss:      bool = False  # True if REJECT but within NEAR_MISS_THRESHOLD_MM
+
+
+class RecommendResult(BaseModel):
+    matches: List[CellMatch]
+
+
+# ── Phase 5 — AI Explainer ────────────────────────────────────────────────────
+
+class ExplainRequest(BaseModel):
+    """Payload for the AI chemistry explainer — cell context + result summary."""
+    cell_id:              int
+    # Constraints
+    energie_cible_wh:     Optional[float] = None
+    courant_cible_a:      float
+    depth_of_discharge:   float           = 80.0
+    cycles_per_day:       float           = 1.0
+    # Result summary (so the engine is not re-run)
+    nb_serie:             int
+    nb_parallele:         int
+    verdict:              str
+    lifetime_years:       Optional[float] = None
+    c_rate_actual:        Optional[float] = None
+    derating_factor_pct:  Optional[float] = None
+    c_rate_warning:       Optional[bool]  = None
+
+
+class ExplainResponse(BaseModel):
+    explanation: str

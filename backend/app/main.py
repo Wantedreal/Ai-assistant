@@ -24,11 +24,17 @@ from typing import List, Optional
 
 from app.db.database import engine, get_db, init_db
 from app.models.cellule import Cellule
-from app.schemas.battery import CalculationRequest, CalculationResult, CellRead
+from app.schemas.battery import (
+    CalculationRequest, CalculationResult, CellRead,
+    RecommendRequest, RecommendResult, CellMatch,
+    ExplainRequest, ExplainResponse,
+)
 from app.core.engine import run_engine
+from app.core.recommender import recommend_cells
 from app.pdf import generate_pdf_report
 from app.step_export import generate_step_file
 from app.importer import import_from_bytes, import_from_path, get_source_path, save_source_path
+from app.explainer import build_user_prompt, explain as ai_explain
 
 # ── Create tables on startup (idempotent — safe to call multiple times) ───────
 init_db()
@@ -284,6 +290,48 @@ def export_step(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# CELL RECOMMENDER
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post(
+    "/api/v1/cells/recommend",
+    response_model=RecommendResult,
+    tags=["Catalogue"],
+    summary="Recommend top 5 cells matching current/DoD constraints",
+)
+def recommend_cells_endpoint(
+    req: RecommendRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Score all cells in the catalogue and return the top 5 best matches.
+
+    Scoring (weighted sum):
+    - Energy density  30%  — volumetric Wh/L
+    - Cycle life      25%  — estimated lifetime at operating DoD
+    - C-rate margin   20%  — headroom between actual and max discharge rate
+    - Temperature     15%  — compatibility (neutral until temp data available)
+    - Weight          10%  — lighter cells score higher
+    """
+    all_cells = db.query(Cellule).all()
+    matches = recommend_cells(all_cells, req)
+    return RecommendResult(matches=[
+        CellMatch(
+            cell=m['cell'],
+            nb_serie=m['nb_serie'],
+            nb_parallele=m['nb_parallele'],
+            total_cells=m['total_cells'],
+            fill_ratio_pct=m['fill_ratio_pct'],
+            margin_l_mm=m['margin_l_mm'],
+            margin_w_mm=m['margin_w_mm'],
+            margin_h_mm=m['margin_h_mm'],
+            near_miss=m['near_miss'],
+        )
+        for m in matches
+    ])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # DATABASE IMPORT / SYNC
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -347,6 +395,65 @@ def sync_cells(db: Session = Depends(get_db)):
 def get_import_config():
     """Returns the source .xlsx path saved from the last Import, or null."""
     return {"source_path": get_source_path()}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AI EXPLAINER
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post(
+    "/api/v1/explain",
+    response_model=ExplainResponse,
+    tags=["AI"],
+    summary="Generate AI engineering rationale for the selected cell",
+)
+def explain_result(
+    req: ExplainRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Calls Claude claude-sonnet-4-6 with the cell specs and calculation result.
+    Returns a 3–4 sentence engineering explanation.
+    Requires ANTHROPIC_API_KEY in backend/.env.
+    """
+    cell = db.query(Cellule).filter(Cellule.id == req.cell_id).first()
+    if not cell:
+        raise HTTPException(status_code=404, detail=f"Cell id={req.cell_id} not found.")
+
+    prompt_text = build_user_prompt(
+        cell_nom=cell.nom,
+        chimie=cell.chimie,
+        capacite_ah=cell.capacite_ah,
+        tension_nominale=cell.tension_nominale,
+        courant_max_a=cell.courant_max_a,
+        cycle_life=cell.cycle_life,
+        dod_reference_pct=cell.dod_reference_pct,
+        c_rate_max_discharge=cell.c_rate_max_discharge,
+        temp_min_c=getattr(cell, 'temp_min_c', None),
+        temp_max_c=getattr(cell, 'temp_max_c', None),
+        energie_cible_wh=req.energie_cible_wh,
+        courant_cible_a=req.courant_cible_a,
+        depth_of_discharge=req.depth_of_discharge,
+        cycles_per_day=req.cycles_per_day,
+        nb_serie=req.nb_serie,
+        nb_parallele=req.nb_parallele,
+        verdict=req.verdict,
+        lifetime_years=req.lifetime_years,
+        c_rate_actual=req.c_rate_actual,
+        derating_factor_pct=req.derating_factor_pct,
+        c_rate_warning=req.c_rate_warning,
+    )
+
+    try:
+        text = ai_explain(prompt_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI service error: {exc}")
+
+    return ExplainResponse(explanation=text)
 
 
 # ── Root and fallback endpoints ───────────────────────────────────────────────

@@ -839,6 +839,29 @@ h6 {
 }
 
 /* ============================================================
+   PERFORMANCE ESTIMATE CARD (Phase 2)
+============================================================ */
+.perf-card {
+  flex: 1;
+  background-color: var(--color-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  min-height: 0;
+  overflow: hidden;
+  transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
+}
+
+.perf-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ============================================================
    ELECTRICAL RESULTS CARD
 ============================================================ */
 .bio-card {
@@ -1191,6 +1214,13 @@ h6 {
   color: var(--color-text);
 }
 
+.cell-search-fabricant {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-text);
+  opacity: 0.85;
+}
+
 .cell-search-specs {
   font-size: var(--text-xs);
   color: var(--color-muted);
@@ -1235,6 +1265,175 @@ h6 {
   background: var(--color-overlay);
   color: var(--color-muted);
   border: 1px solid var(--color-border);
+}
+
+/* chemistry pill — colored per chemistry */
+.cell-chem-pill {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  margin-left: 4px;
+  letter-spacing: 0.04em;
+  border: 1px solid currentColor;
+}
+.cell-chem-pill[data-chem="LFP"]  { color: #16a34a; background: rgba(22,163,74,0.10); }
+.cell-chem-pill[data-chem="NMC"]  { color: #3b82f6; background: rgba(59,130,246,0.10); }
+.cell-chem-pill[data-chem="NCA"]  { color: #8b5cf6; background: rgba(139,92,246,0.10); }
+.cell-chem-pill[data-chem="LTO"]  { color: #06b6d4; background: rgba(6,182,212,0.10); }
+.cell-chem-pill[data-chem="LCO"]  { color: #f59e0b; background: rgba(245,158,11,0.10); }
+
+.cell-detail__header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.cell-detail__fabricant {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 2px;
+}
+
+.cell-detail__phase1 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cell-detail__phase1 span {
+  font-size: 0.65rem;
+  background: var(--color-overlay);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 1px 7px;
+  color: var(--color-muted);
+}
+
+/* ── Best Matches (Phase 3 recommender) ── */
+.best-matches {
+  margin-bottom: 6px;
+}
+.best-matches__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  background: var(--color-overlay);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.best-matches__toggle:hover {
+  background: var(--color-border);
+}
+.best-matches__caret {
+  font-size: 0.6rem;
+  opacity: 0.7;
+}
+.best-matches__list {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.best-matches__state {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  padding: 6px 0;
+  text-align: center;
+}
+.best-matches__state--err {
+  color: #f87171;
+}
+.best-matches__item {
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-overlay);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.best-matches__item:hover {
+  border-color: var(--color-accent);
+  background: rgba(59, 130, 246, 0.06);
+}
+.best-matches__item--active {
+  border-color: var(--color-accent);
+  background: rgba(59, 130, 246, 0.10);
+}
+.best-matches__item--near {
+  border-color: #d97706;
+  background: rgba(217, 119, 6, 0.06);
+}
+.best-matches__item--near:hover {
+  border-color: #f59e0b;
+  background: rgba(217, 119, 6, 0.12);
+}
+.best-matches__row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+}
+.best-matches__rank {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--color-muted);
+  min-width: 18px;
+}
+.best-matches__name {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.best-matches__config {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+.best-matches__bar-track {
+  height: 3px;
+  background: var(--color-border);
+  border-radius: 2px;
+  margin-bottom: 3px;
+}
+.best-matches__bar-fill {
+  height: 3px;
+  background: var(--color-accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.best-matches__bar-fill--near {
+  background: #d97706;
+}
+.best-matches__near-tag {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #d97706;
+  border: 1px solid #d97706;
+  border-radius: var(--radius-full);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.best-matches__reason {
+  font-size: 0.62rem;
+  color: var(--color-muted);
 }
 
 /* ============================================================
@@ -1442,6 +1641,91 @@ h6 {
 }
 
 /* ============================================================
+   AI EXPLAINER PANEL
+============================================================ */
+.explainer-panel {
+  margin-top: 10px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+  width: 100%;
+  align-self: stretch;
+}
+
+.explainer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  letter-spacing: 0.04em;
+  width: 100%;
+  text-align: left;
+  transition: opacity 0.15s;
+}
+
+.explainer-toggle:hover {
+  opacity: 0.75;
+}
+
+.explainer-chevron {
+  margin-left: auto;
+  transition: transform 0.2s var(--ease-out);
+}
+
+.explainer-chevron--open {
+  transform: rotate(180deg);
+}
+
+.explainer-body {
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.explainer-text {
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--color-text);
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.explainer-error {
+  font-size: 0.7rem;
+  color: #dc2626;
+  margin: 0;
+}
+
+/* Skeleton loader */
+.explainer-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.explainer-skeleton__line {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--color-border) 25%,
+    rgba(0,0,0,0.06) 50%,
+    var(--color-border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ============================================================
    LOADING & ERROR SCREENS
 ============================================================ */
 .loading-screen,
@@ -1492,7 +1776,8 @@ h6 {
 .headline-card,
 .photo-card,
 .bio-card,
-.contact-card {
+.contact-card,
+.perf-card {
   animation: cardFadeIn var(--duration-slow) var(--ease-out) both;
 }
 
@@ -1518,6 +1803,10 @@ h6 {
 
 .contact-card {
   animation-delay: 300ms;
+}
+
+.perf-card {
+  animation-delay: 360ms;
 }
 
 /* ============================================================
@@ -1661,14 +1950,16 @@ h6 {
   }
 
   .contact-card,
-  .bio-card {
+  .bio-card,
+  .perf-card {
     padding: 18px 16px;
     max-height: 200px;
   }
 
   /* Make sure result rows stack better */
   .contact-card>div:last-child>div,
-  .bio-card>div:last-child>div {
+  .bio-card>div:last-child>div,
+  .perf-card>div:last-child>div {
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;
@@ -1761,7 +2052,8 @@ h6 {
   }
 
   .bio-card,
-  .contact-card {
+  .contact-card,
+  .perf-card {
     max-height: 200px;
   }
 
@@ -1866,7 +2158,8 @@ h6 {
   }
 
   .bio-card,
-  .contact-card {
+  .contact-card,
+  .perf-card {
     padding: 16px;
     max-height: 240px;
   }
@@ -1967,13 +2260,15 @@ h6 {
   }
 
   .bio-card,
-  .contact-card {
+  .contact-card,
+  .perf-card {
     padding: 22px 22px 26px;
   }
 
   /* Make sure result rows stack better */
   .contact-card>div:last-child>div,
-  .bio-card>div:last-child>div {
+  .bio-card>div:last-child>div,
+  .perf-card>div:last-child>div {
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;

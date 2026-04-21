@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { apiService } from '../services/api'
 import CellSchematic from './CellSchematic'
+import ExplainerPanel from './ExplainerPanel'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (v, unit = '', d = 2) =>
@@ -26,12 +27,14 @@ function CellSearchSelector({ cells, selectedId, onSelectCell }) {
   )
 
   const filteredCells = useMemo(() => {
-    if (!searchTerm.trim()) return cells // Show all cells when no search
+    if (!searchTerm.trim()) return cells
     const term = searchTerm.toLowerCase()
     return cells.filter(c =>
       c.nom.toLowerCase().includes(term) ||
-      c.type_cellule.toLowerCase().includes(term)
-    ) // Show all matching results
+      c.type_cellule.toLowerCase().includes(term) ||
+      (c.fabricant && c.fabricant.toLowerCase().includes(term)) ||
+      (c.chimie && c.chimie.toLowerCase().includes(term))
+    )
   }, [cells, searchTerm])
 
   const groupedCells = useMemo(() => {
@@ -93,10 +96,14 @@ function CellSearchSelector({ cells, selectedId, onSelectCell }) {
                     <div
                       key={c.id}
                       className={`cell-search-item ${c.id === selectedId ? 'selected' : ''}`}
-                      onMouseDown={(e) => e.preventDefault()} // Prevent blur before click
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleSelect(c.id)}
                     >
-                      <span className="cell-search-name">{c.nom}</span>
+                      <span className="cell-search-name">
+                        {c.nom}
+                        {c.chimie && <span className="cell-chem-pill" data-chem={c.chimie}>{c.chimie}</span>}
+                      </span>
+                      {c.fabricant && <span className="cell-search-fabricant">{c.fabricant}</span>}
                       <span className="cell-search-specs">
                         {c.type_cellule === 'Cylindrical'
                           ? `${c.diameter_mm || c.longueur_mm}×${c.hauteur_mm}mm`
@@ -119,6 +126,110 @@ function CellSearchSelector({ cells, selectedId, onSelectCell }) {
   )
 }
 
+function BestMatches({ form, selectedId, onSelectCell }) {
+  const [open, setOpen]       = useState(false)
+  const [matches, setMatches] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState(null)
+
+  const fetchMatches = async () => {
+    setLoading(true)
+    setError(null)
+    const toN = (v, fb = 0) => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? fb : n }
+    const toOpt = (v) => { const n = parseFloat(String(v)); return isNaN(n) || v === '' ? undefined : n }
+    try {
+      const payload = {
+        courant_cible_a:    toN(form.courant_cible_a, 100),
+        energie_cible_wh:   toOpt(form.energie_cible_wh),
+        tension_cible_v:    toOpt(form.tension_cible_v),
+        housing_l:          toN(form.housing_l, 700),
+        housing_l_small:    toN(form.housing_l_small, 300),
+        housing_h:          toN(form.housing_h, 70),
+        marge_mm:           toN(form.marge_mm, 15),
+        cell_gap_mm:        toN(form.cell_gap_mm, 0),
+        depth_of_discharge: toN(form.depth_of_discharge, 80),
+        cycles_per_day:     toN(form.cycles_per_day, 1),
+        config_mode:        form.config_mode || 'auto',
+        ...(form.config_mode === 'manual' && {
+          manual_series:   parseInt(form.manual_series)   || undefined,
+          manual_parallel: parseInt(form.manual_parallel) || undefined,
+        }),
+      }
+      // Remove undefined keys so Pydantic doesn't reject them
+      Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k])
+      const { data } = await apiService.recommendCells(payload)
+      setMatches(data.matches)
+    } catch {
+      setError('Recommendations unavailable')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggle = () => {
+    if (!open) fetchMatches()
+    setOpen(v => !v)
+  }
+
+  return (
+    <div className="best-matches">
+      <button className="best-matches__toggle" onClick={handleToggle} type="button">
+        Best matches&nbsp;
+        <span className="best-matches__caret">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="best-matches__list">
+          {loading && <div className="best-matches__state">Loading…</div>}
+          {error   && <div className="best-matches__state best-matches__state--err">{error}</div>}
+          {!loading && !error && matches.length === 0 && (
+            <div className="best-matches__state">No cells fit these constraints</div>
+          )}
+          {!loading && !error && matches.map((m, i) => {
+            const isNear = m.near_miss
+            const minMargin = Math.min(m.margin_l_mm, m.margin_w_mm, m.margin_h_mm)
+            return (
+              <div
+                key={m.cell.id}
+                className={[
+                  'best-matches__item',
+                  isNear ? 'best-matches__item--near' : '',
+                  m.cell.id === selectedId ? 'best-matches__item--active' : '',
+                ].join(' ').trim()}
+                onClick={() => onSelectCell(m.cell.id)}
+              >
+                <div className="best-matches__row">
+                  <span className="best-matches__rank">#{i + 1}</span>
+                  <span className="best-matches__name">{m.cell.nom}</span>
+                  {m.cell.chimie && (
+                    <span className="cell-chem-pill" data-chem={m.cell.chimie}>{m.cell.chimie}</span>
+                  )}
+                  {isNear
+                    ? <span className="best-matches__near-tag">near fit</span>
+                    : <span className="best-matches__config">{m.nb_serie}S/{m.nb_parallele}P</span>
+                  }
+                </div>
+                <div className="best-matches__bar-track">
+                  <div
+                    className={`best-matches__bar-fill${isNear ? ' best-matches__bar-fill--near' : ''}`}
+                    style={{ width: `${Math.max(0, Math.min(100, m.fill_ratio_pct))}%` }}
+                  />
+                </div>
+                <div className="best-matches__reason">
+                  {isNear
+                    ? `${m.nb_serie}S/${m.nb_parallele}P · Short by ${Math.abs(minMargin).toFixed(0)} mm`
+                    : `Fill ${m.fill_ratio_pct.toFixed(1)}% · Margin L ${m.margin_l_mm.toFixed(0)} W ${m.margin_w_mm.toFixed(0)} H ${m.margin_h_mm.toFixed(0)} mm`
+                  }
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CellSelectorCard({
   cells,
   selectedId,
@@ -127,6 +238,7 @@ export function CellSelectorCard({
   masseKg,
   swellingLabel,
   onReloadCells,
+  form,
 }) {
   const fileInputRef = useRef(null)
   const [importing, setImporting] = useState(false)
@@ -186,6 +298,11 @@ export function CellSelectorCard({
           <span className="projects-card__label">Cell Selector</span>
         </div>
 
+        {/* Best matches */}
+        {form && (
+          <BestMatches form={form} selectedId={selectedId} onSelectCell={onSelectCell} />
+        )}
+
         {/* Search selector */}
         <CellSearchSelector
           cells={cells}
@@ -221,13 +338,22 @@ export function CellSelectorCard({
 
           {cell && (
             <div className="cell-detail">
-              <div>
+              <div className="cell-detail__header">
                 <strong className="cell-detail__name">{cell.nom}</strong>
-                {' '}
                 <span className="cell-type-badge">{cell.type_cellule}</span>
+                {cell.chimie && <span className="cell-chem-pill" data-chem={cell.chimie}>{cell.chimie}</span>}
               </div>
+              {cell.fabricant && <div className="cell-detail__fabricant">{cell.fabricant}</div>}
               <div>{formatDimensions(cell)}</div>
               <div>Swelling: {swellingLabel}</div>
+              {(cell.cycle_life || cell.c_rate_max_discharge || cell.cutoff_voltage_v) && (
+                <div className="cell-detail__phase1">
+                  {cell.cycle_life       && <span>{cell.cycle_life.toLocaleString()} cycles{cell.dod_reference_pct ? ` @ ${cell.dod_reference_pct}% DoD` : ''}</span>}
+                  {cell.c_rate_max_discharge && <span>Dis. {cell.c_rate_max_discharge}C max</span>}
+                  {cell.c_rate_max_charge    && <span>Chg. {cell.c_rate_max_charge}C max</span>}
+                  {cell.cutoff_voltage_v     && <span>Cutoff {cell.cutoff_voltage_v}V</span>}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -386,6 +512,8 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
           )}
         </div>
       )}
+
+      <ExplainerPanel cell={cell} form={form} result={result} />
     </div>
   )
 }

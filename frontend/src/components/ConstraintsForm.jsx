@@ -36,7 +36,7 @@ export default function ConstraintsForm({ form, onFieldChange }) {
             <InputRow label="Energy"  unit="Wh" value={form.energie_cible_wh}  onChange={set('energie_cible_wh')} min={1} />
             <InputRow label="Voltage" unit="V"   value={form.tension_cible_v}   onChange={set('tension_cible_v')}   min={0} />
             <InputRow label="Current" unit="A"   value={form.courant_cible_a}     onChange={set('courant_cible_a')}   min={0.001} />
-            <InputRow label="DoD"     unit="%"   value={form.depth_of_discharge}  onChange={set('depth_of_discharge')} min={1} step={1} />
+            <InputRow label="DoD"           unit="%"         value={form.depth_of_discharge}  onChange={set('depth_of_discharge')} min={1} step={1} />
           </div>
         </div>
 

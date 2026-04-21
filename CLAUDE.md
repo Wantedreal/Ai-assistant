@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Orientation
+
+**At the start of every session, read this file first, then immediately read:**
+`C:\Users\rayan\.claude\projects\C--Test-Project-Ai-assistant\memory\project_graph.md`
+
+That file contains 10 Mermaid diagrams covering the full architecture, API, engine algorithm, component tree, data flow, 3D layers, constants, and build pipeline. Reading it gives you a complete project map without re-reading all source files.
+
 ## Project Overview
 
 Battery Pack Pre-Design Assistant — a desktop Electron application for electrical engineers to size Li-Ion battery packs. The user inputs housing dimensions and energy/current targets; the app outputs a Series×Parallel cell configuration with ACCEPT/REJECT verdict and 3D visualization.
@@ -22,6 +29,25 @@ Electron (frontend/electron/main.cjs)
 **Key data flow:** User fills form → `POST /api/v1/calculate` → deterministic algorithm (P = ⌈I/I_max⌉, S = ⌈max(V, E/(V·C·P·DoD))⌉) → geometry check vs housing → result + 3D render update.
 
 **Vite dev proxy:** `/api` → `http://127.0.0.1:8000`, so frontend never hardcodes the backend port.
+
+## Environment Setup (new machine)
+
+**Python 3.12 is required** — cadquery/OCP has no Python 3.14 wheel.
+Python 3.14 can coexist; use `py -3.12` to target the right version.
+
+```powershell
+# Install Python 3.12 if not present
+winget install Python.Python.3.12 --accept-source-agreements --accept-package-agreements
+
+# Create venv with 3.12 explicitly
+cd backend
+py -3.12 -m venv venv
+venv\Scripts\pip install --prefer-binary fastapi uvicorn sqlalchemy "pandas>=2.2" openpyxl pydantic python-multipart reportlab cadquery
+
+# Frontend
+cd frontend
+npm install
+```
 
 ## Development Commands
 
@@ -88,6 +114,10 @@ Output installer is fully self-contained — no Python or Node.js needed on targ
 | POST | `/api/v1/calculate` | Core sizing calculation |
 | POST | `/api/v1/calculate/pdf` | PDF report generation |
 | POST | `/api/v1/export/step` | STEP file export (CadQuery) |
+| POST | `/api/v1/cells/import` | Upload `.xlsx` → truncate + re-insert catalogue, saves source path |
+| POST | `/api/v1/cells/sync` | Re-import from last saved source path (OneDrive sync workflow) |
+| GET | `/api/v1/cells/import/config` | Returns saved source path (used to enable/disable Sync button) |
+| POST | `/api/v1/cells/recommend` | Run engine on all cells, return top 5 ACCEPT + up to 3 near-miss cells |
 
 Swagger UI available at `http://localhost:8000/docs` when backend is running.
 
@@ -201,8 +231,28 @@ See `/reference_3D` for reference images of the target assembly.
 - STEP export (`backend/app/step_export.py`): `POST /api/v1/export/step` — CadQuery parametric STEP of full cell array (cells, terminals, busbars, brackets/insulation cards/side plates). Housing, BMS and cables intentionally excluded from STEP (cleaner for CAD integration). Performance: `Shape.moved()` + `Compound.makeCompound()` pattern — one OCC solid per unique shape, N cheap location-transforms (~60× faster than individual solids). Typical generation time: 1–7 s depending on cell count. Colors embedded as `COLOUR_RGB` in AP214; visible in SolidWorks/CATIA/Fusion 360/FreeCAD.
 - STEP button in `ExportPanel.jsx` — enabled after first Calculate (uses `lastPayload` stored in `App.jsx` state, forwarded via `PackViewer3D` → `ExportPanel`). `api.js` has `exportStep(payload)` → `responseType: 'blob'`.
 
+- **Cell schematic** (`frontend/src/components/CellSchematic.jsx`): pure inline SVG, no deps. Renders differently per cell type — Cylindrical (side view + inset top-view circle), Prismatic (isometric 3-face box), Pouch (soft-corner foil with tabs). Dimensions are proportional to real cell data. Positive terminal red, negative blue. Dimension annotation lines included. Empty state shown when no cell selected. Replaces the static `Projectscard.png` image in `CellSelectorCard`.
+
+- **Database import/sync** (`backend/app/importer.py`): reads `.xlsx` with openpyxl (no pandas), truncates + re-inserts `cellules` table, saves source path to `backend/data/import_config.json`. Two buttons added to bottom of `CellSelectorCard` — **Import** (file picker upload) and **Sync** (re-reads from saved path). Sync disabled until first Import. Both styled as `modern-btn`. After success, `loadCells()` in `App.jsx` refreshes the dropdown. `frontend/electron/preload.js` exposes `window.electronAPI.getFilePath(file)` via `webUtils` so Electron can pass the real filesystem path to the backend for future Sync calls.
+
+- **Phase 1 — Cell Data Model Extension** (`backend/app/models/cellule.py`, `backend/app/schemas/battery.py`, `backend/app/importer.py`): Added 10 nullable columns to `Cellule` ORM and `CellRead` schema — `fabricant`, `chimie`, `cycle_life`, `dod_reference_pct`, `c_rate_max_discharge`, `c_rate_max_charge`, `energie_volumique_wh_l`, `eol_capacity_pct`, `energie_massique_wh_kg`, `cutoff_voltage_v`. Two Alembic migrations applied (`migrations/versions/`). Importer updated to read TUM/ISI extended Excel format (auto-detected via `Product_Number` header) with deduplication (most-filled row wins, tie-break by CycleLife), chemistry normalization (NMC variants → NMC, Ni-Rich → NMC), dod_reference_pct fraction→percentage conversion, and outlier removal (energie_volumique > 800 Wh/L → NULL). Frontend: chemistry pill badge in search dropdown and cell detail, fabricant line in both, phase1 spec row (cycles @ DoD, C-rate, cutoff V), chemistry color badge in CellSchematic SVG. **3 roadmap fields absent from TUM/ISI dataset:** `temp_min_c`, `temp_max_c`, `self_discharge_pct_month` — not added; needed before Phase 2 temperature check and calendar aging sections.
+
+- **Phase 2 — Engine: C-rate Derating + Cycle Life** (`backend/app/core/engine.py`, `backend/app/schemas/battery.py`, `backend/app/pdf.py`, `frontend/src/components/ConstraintsForm.jsx`): Added C-rate derating and lifetime estimation as informational outputs — they do NOT affect the ACCEPT/REJECT verdict. Engine computes `c_rate_actual`, `derating_factor_pct`, `c_effective_ah`, `cycle_life_at_dod`, `lifetime_years`, `lifetime_years_low`, `lifetime_years_high`. PDF gains Section 6 "Performance Estimate" with full Relation/A.N./Result blocks for both sub-sections. `cycles_per_day` lives in `App.jsx` form state (default 1, sent silently to backend) but is **not shown in the UI form** — it is PDF-only. **k constants:** NMC 0.33 (PyBaMM Chen2020 validated), LFP 0.10, NCA 0.40, LTO 0.04, LCO 0.25, unknown 0.20. Formula valid for 20–80% of C_max; `c_rate_warning=True` above 80%. **Aging exponents:** NMC 1.5, LFP 1.8, NCA 1.3, LTO 2.2 (literature values, ±30% uncertainty range shown in report). PyBaMM calibration script at `backend/scripts/calibrate_derating.py`. **3 fields still missing from dataset:** `temp_min_c`, `temp_max_c`, `self_discharge_pct_month` — temperature check and calendar aging deferred. **Discharge curve columns** (`cap_pct_at_0_5c` through `cap_pct_at_5c`) planned for per-cell k fitting once manufacturer datasheets are collected (priority: Kokam 35 cells, Saft 33 cells, LG Chem 12 cells).
+
+- **Phase 3 — Cell Recommender** (`backend/app/core/recommender.py`, `backend/app/schemas/battery.py`, `backend/app/main.py`, `frontend/src/components/CellSelector.jsx`): New endpoint `POST /api/v1/cells/recommend` runs the sizing engine on every cell in the catalogue with the user's exact constraints and returns the cells that fit, ranked by fill ratio. Two tiers of results:
+  - **Fitting cells** (blue, up to 5) — ACCEPT verdict, ranked by fill ratio descending. Shows S×P config, fill %, and actual margins L/W/H in mm.
+  - **Near-miss cells** (amber "near fit" tag, up to 3) — REJECT verdict but within 30 mm of fitting on the worst axis. Shows S×P, exact mm deficit. Threshold constant: `NEAR_MISS_THRESHOLD_MM = 30` in `recommender.py`.
+  - No multi-criteria scoring (energy density, weight, cycle life removed by design — fit is the only criterion).
+  - Frontend: collapsible "Best matches" section at top of `CellSelectorCard`, collapsed by default, fetches on open, click any result to select the cell. `RecommendRequest` mirrors `CalculationRequest` (same housing/energy/current/margin/gap/DoD fields, no `cell_id`). `cycles_per_day` passed silently (default 1). `CellMatch` response includes `near_miss` bool, S×P, fill ratio, margins.
+
+- **Phase 5 — AI Chemistry Explainer** (`backend/app/explainer.py`, `frontend/src/components/ExplainerPanel.jsx`, `backend/.env`): OpenRouter API (free tier), 7-model fallback chain (`meta-llama/llama-3.3-70b`, `google/gemma-3-27b`, etc.). Key embedded as `_EMBEDDED_KEY` in `explainer.py` (acceptable for internal tool). System prompt merged into user message for Gemma compatibility (Gemma rejects `system` role). `POST /api/v1/explain` endpoint. Collapsible `ExplainerPanel` below verdict in `CellActionCard`, caches result per calculation via `fetchedForRef`. `max_tokens=800`.
+
+- **Phase 6 — BMS Specification** (`backend/app/core/bms_spec.py`, `backend/app/schemas/battery.py`, `backend/app/core/engine.py`, `frontend/src/components/ResultsPanel.jsx`, `backend/app/pdf.py`): `compute_bms_spec()` called as Step 7 in engine. 11 new fields on `CalculationResult`: `bms_v_min/max_pack` (S × chemistry cutoff), `bms_i_continuous_a` (P × I_max), `bms_i_charge_a` (P × c_rate_max_charge × C, or 0.5C flagged as estimated), `bms_balance_channels` (= S), `bms_balance_current_a` (C × 0.02), `bms_temp_sensors` (⌈S×P/12⌉), `bms_charge_cutoff_temp_c` (hardcoded per chemistry), `bms_discharge_cutoff_temp_c` (cell `temp_min_c`), `bms_suggestion` (lookup table). Chemistry cutoffs: LFP 2.50–3.65 V, NMC 2.80–4.20 V, NCA 3.00–4.20 V, LTO 1.80–2.80 V. `BMSCard` added to `ResultsPanel.jsx` (reuses `.perf-card`). PDF section 5.4 added.
+
+- **Phase 7 — BMS Wiring Topology: SKIPPED** — not needed for a pre-design tool. BMS manufacturer datasheets cover wiring; topology is identical across all S counts.
+
 **uncompleted:**
-- **Phase 6** — EVA foam insulation wrap + heat shrink sleeve over cell array (cylindrical and prismatic)
+- **EVA foam / heat shrink** — insulation wrap over cell array (cylindrical and prismatic)
 - **Option 4 — Housing-geometry-based positioning**: BMS, cables, and harness should attach to housing walls (flush against inner face) rather than to cell array bounds. Requires passing `housingL, housingW` into `buildBMS()`. BMS Z = `housingW / 2 - WALL_MM - bmsThick / 2`; harness Y = `housingH / 2 - 4`; cable exits at `housingH / 2`.
 
 ## Layout Notes
@@ -275,4 +325,4 @@ Copy `frontend/release/Battery Pack Designer Setup 1.0.0.exe` to target machine 
 If the app fails on a very old machine: install [VC++ 2015-2022 Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) (required by Python 3.13, usually pre-installed on Windows 10/11).
 
 ## Your task
-I want you to review the code entirely, then I want you to plan a solution to make a graphe idea for you to understand easily the project every time I open a new session if you will need to use some plugins/mcp/skills just tell me
+I want you now to review the code entirely I already putted a graph that explain the entire structure you can use the plugin 

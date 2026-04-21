@@ -20,6 +20,21 @@ from app.schemas.battery import (
     ArrayDimensions, ElectricalSummary,
     VerdictEnum, CellRead
 )
+from app.core.bms_spec import compute_bms_spec
+
+
+# ── Phase 2 constants ─────────────────────────────────────────────────────────
+# k: derating constant in  factor = 1 - k*(C_actual/C_max)^2
+# NMC validated by PyBaMM Chen2020; others are literature estimates.
+# Valid operating range: 20–80% of C_max. Outside → c_rate_warning=True.
+_K_BY_CHEMISTRY = {'NMC': 0.33, 'LFP': 0.10, 'NCA': 0.40, 'LTO': 0.04, 'LCO': 0.25}
+_K_DEFAULT = 0.20
+
+# Wöhler aging exponents per chemistry (literature averages, ±0.3 spread)
+_AGING_EXPONENT = {'NMC': 1.5, 'LFP': 1.8, 'NCA': 1.3, 'LTO': 2.2, 'LCO': 1.5}
+_AGING_EXP_DEFAULT = 1.5
+
+_LIFETIME_UNCERTAINTY = 0.30  # ±30% range shown in report
 
 
 def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
@@ -218,13 +233,66 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     )
 
     # ── §9.3.2 mandatory derived metrics ─────────────────────────────────────
-    energie_reelle_wh = round(usable_energy_wh, 2)            # Target Energy (Wh) = s*P * Vn * Cap * DoD
-    tension_totale_v   = actual_voltage_v                      # V_nom × S
-    courant_total_a    = round(P * cell.courant_max_a, 2)      # I_cell_max × P (spec §9.3.2)
-
+    energie_reelle_wh = round(usable_energy_wh, 2)
+    tension_totale_v   = actual_voltage_v
+    courant_total_a    = round(P * cell.courant_max_a, 2)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STEP 6 — Build and return result
+    # STEP 6 — Phase 2: C-rate derating + lifetime (informational, no verdict impact)
+    # ══════════════════════════════════════════════════════════════════════════
+    c_rate_actual       = None
+    c_rate_warning      = None
+    derating_factor_pct = None
+    c_effective_ah      = None
+
+    if P > 0 and cell.capacite_ah > 0:
+        I_per_cell    = req.courant_cible_a / P
+        c_rate_actual = round(I_per_cell / cell.capacite_ah, 3)
+
+        if cell.c_rate_max_discharge and cell.c_rate_max_discharge > 0:
+            ratio = c_rate_actual / cell.c_rate_max_discharge
+            k     = _K_BY_CHEMISTRY.get(cell.chimie, _K_DEFAULT)
+
+            if ratio < 0.20:
+                derating_factor_pct = 0.0
+                c_effective_ah      = round(cell.capacite_ah, 3)
+                c_rate_warning      = False
+            else:
+                derating            = k * ratio ** 2
+                derating_factor_pct = round(-derating * 100, 1)
+                c_effective_ah      = round(cell.capacite_ah * (1.0 - derating), 3)
+                c_rate_warning      = ratio > 0.80
+
+    cycle_life_at_dod   = None
+    lifetime_years      = None
+    lifetime_years_low  = None
+    lifetime_years_high = None
+
+    if (cell.cycle_life and cell.dod_reference_pct and
+            cell.dod_reference_pct > 0 and req.depth_of_discharge > 0):
+        exponent          = _AGING_EXPONENT.get(cell.chimie, _AGING_EXP_DEFAULT)
+        dod_ratio         = cell.dod_reference_pct / req.depth_of_discharge
+        cycle_life_at_dod = max(1, round(cell.cycle_life * (dod_ratio ** exponent)))
+        cycles_per_day    = req.cycles_per_day if req.cycles_per_day else 1.0
+        lifetime_years    = round(cycle_life_at_dod / (cycles_per_day * 365), 1)
+        lifetime_years_low  = round(lifetime_years * (1 - _LIFETIME_UNCERTAINTY), 1)
+        lifetime_years_high = round(lifetime_years * (1 + _LIFETIME_UNCERTAINTY), 1)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # STEP 7 — BMS specification
+    # ══════════════════════════════════════════════════════════════════════════
+    bms = compute_bms_spec(
+        S=S, P=P,
+        chimie=cell.chimie,
+        tension_nominale=cell.tension_nominale,
+        capacite_ah=cell.capacite_ah,
+        courant_max_a=cell.courant_max_a,
+        c_rate_max_charge=cell.c_rate_max_charge,
+        temp_min_c=getattr(cell, 'temp_min_c', None),
+    )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # STEP 8 — Build and return result
     # ══════════════════════════════════════════════════════════════════════════
     return CalculationResult(
         # ── §9.3.2 required fields — spec-exact names ────────────────────────
@@ -262,4 +330,27 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         validation_errors=violations,
         config_mode=req.config_mode.value,
         cell_used=CellRead.model_validate(cell),
+
+        # Phase 2 — informational
+        c_rate_actual=c_rate_actual,
+        c_rate_warning=c_rate_warning,
+        derating_factor_pct=derating_factor_pct,
+        c_effective_ah=c_effective_ah,
+        cycle_life_at_dod=cycle_life_at_dod,
+        lifetime_years=lifetime_years,
+        lifetime_years_low=lifetime_years_low,
+        lifetime_years_high=lifetime_years_high,
+
+        # Phase 6 — BMS specification
+        bms_v_min_pack=bms.v_min_pack,
+        bms_v_max_pack=bms.v_max_pack,
+        bms_i_continuous_a=bms.i_continuous_a,
+        bms_i_charge_a=bms.i_charge_a,
+        bms_i_charge_estimated=bms.i_charge_estimated,
+        bms_balance_channels=bms.balance_channels,
+        bms_balance_current_a=bms.balance_current_a,
+        bms_temp_sensors=bms.temp_sensors,
+        bms_charge_cutoff_temp_c=bms.charge_cutoff_temp_c,
+        bms_discharge_cutoff_temp_c=bms.discharge_cutoff_temp_c,
+        bms_suggestion=bms.bms_suggestion,
     )
