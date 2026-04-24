@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { apiService } from '../services/api'
 import CellSchematic from './CellSchematic'
-import ExplainerPanel from './ExplainerPanel'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (v, unit = '', d = 2) =>
@@ -344,16 +343,52 @@ export function CellSelectorCard({
                 {cell.chimie && <span className="cell-chem-pill" data-chem={cell.chimie}>{cell.chimie}</span>}
               </div>
               {cell.fabricant && <div className="cell-detail__fabricant">{cell.fabricant}</div>}
-              <div>{formatDimensions(cell)}</div>
-              <div>Swelling: {swellingLabel}</div>
-              {(cell.cycle_life || cell.c_rate_max_discharge || cell.cutoff_voltage_v) && (
-                <div className="cell-detail__phase1">
-                  {cell.cycle_life       && <span>{cell.cycle_life.toLocaleString()} cycles{cell.dod_reference_pct ? ` @ ${cell.dod_reference_pct}% DoD` : ''}</span>}
-                  {cell.c_rate_max_discharge && <span>Dis. {cell.c_rate_max_discharge}C max</span>}
-                  {cell.c_rate_max_charge    && <span>Chg. {cell.c_rate_max_charge}C max</span>}
-                  {cell.cutoff_voltage_v     && <span>Cutoff {cell.cutoff_voltage_v}V</span>}
+              <dl className="cell-kv">
+                <div className="cell-kv__row">
+                  <dt>Chemistry</dt>
+                  <dd>{cell.chimie ?? '—'}</dd>
                 </div>
-              )}
+                <div className="cell-kv__row">
+                  <dt>Dimensions</dt>
+                  <dd>{formatDimensions(cell)}</dd>
+                </div>
+                <div className="cell-kv__row">
+                  <dt>Swelling</dt>
+                  <dd>{swellingLabel}</dd>
+                </div>
+                <div className="cell-kv__row">
+                  <dt>Cycle life</dt>
+                  <dd>
+                    {cell.cycle_life
+                      ? `${cell.cycle_life.toLocaleString()} cycles${cell.dod_reference_pct ? ` @ ${cell.dod_reference_pct}% DoD` : ''}`
+                      : '—'}
+                  </dd>
+                </div>
+                <div className="cell-kv__row">
+                  <dt>Discharge</dt>
+                  <dd>{cell.c_rate_max_discharge != null ? `${cell.c_rate_max_discharge}C max` : '—'}</dd>
+                </div>
+                <div className="cell-kv__row">
+                  <dt>Charge</dt>
+                  <dd>{cell.c_rate_max_charge != null ? `${cell.c_rate_max_charge}C max` : '—'}</dd>
+                </div>
+                <div className="cell-kv__row">
+                  <dt>Cutoff V</dt>
+                  <dd>{cell.cutoff_voltage_v != null ? `${cell.cutoff_voltage_v} V` : '—'}</dd>
+                </div>
+                <div className="cell-kv__row">
+                  <dt>Temp range</dt>
+                  <dd>
+                    {cell.temp_min_c != null ? `${cell.temp_min_c} °C` : '—'}
+                    {' → '}
+                    {cell.temp_max_c != null ? `${cell.temp_max_c} °C` : '—'}
+                  </dd>
+                </div>
+                <div className="cell-kv__row">
+                  <dt>Max charge T</dt>
+                  <dd>{cell.temp_max_charge_c != null ? `${cell.temp_max_charge_c} °C` : '—'}</dd>
+                </div>
+              </dl>
             </div>
           )}
         </div>
@@ -399,6 +434,102 @@ export function CellSelectorCard({
 }
 
 
+export function AIFab({ result, cell, form }) {
+  const [open, setOpen]     = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [text, setText]     = useState(null)
+  const [error, setError]   = useState(null)
+  const fetchedForRef       = useRef(null)
+
+  const resultKey = `${result?.nb_serie}-${result?.nb_parallele}-${cell?.id}-${result?.verdict}`
+
+  const toNum = (v, fb = 0) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? fb : n }
+
+  const fetchExplanation = async () => {
+    if (fetchedForRef.current === resultKey) return
+    setLoading(true)
+    setText(null)
+    setError(null)
+    const payload = {
+      cell_id:             cell.id,
+      // constraints
+      energie_cible_wh:    form.energie_cible_wh != null && form.energie_cible_wh !== '' ? toNum(form.energie_cible_wh) : undefined,
+      tension_cible_v:     form.tension_cible_v  != null && form.tension_cible_v  !== '' ? toNum(form.tension_cible_v)  : undefined,
+      courant_cible_a:     toNum(form.courant_cible_a),
+      depth_of_discharge:  toNum(form.depth_of_discharge, 80),
+      cycles_per_day:      toNum(form.cycles_per_day, 1),
+      housing_l:           toNum(form.housing_l),
+      housing_l_small:     toNum(form.housing_l_small),
+      housing_h:           toNum(form.housing_h),
+      // result
+      nb_serie:            result.nb_serie,
+      nb_parallele:        result.nb_parallele,
+      verdict:             result.verdict,
+      justification:       result.justification       ?? undefined,
+      tension_totale_v:    result.tension_totale_v    ?? undefined,
+      energie_reelle_wh:   result.energie_reelle_wh   ?? undefined,
+      pack_l_mm:           result.dimensions_raw?.longueur_mm ?? undefined,
+      pack_w_mm:           result.dimensions_raw?.largeur_mm  ?? undefined,
+      pack_h_mm:           result.dimensions_raw?.hauteur_mm  ?? undefined,
+      margin_l_mm:         result.marges_reelles?.L   ?? undefined,
+      margin_w_mm:         result.marges_reelles?.W   ?? undefined,
+      margin_h_mm:         result.marges_reelles?.H   ?? undefined,
+      lifetime_years:      result.lifetime_years      ?? undefined,
+      c_rate_actual:       result.c_rate_actual       ?? undefined,
+      derating_factor_pct: result.derating_factor_pct ?? undefined,
+      c_rate_warning:      result.c_rate_warning      ?? undefined,
+    }
+    try {
+      const { data } = await apiService.explainResult(payload)
+      setText(data.explanation)
+      fetchedForRef.current = resultKey
+    } catch (e) {
+      const detail = e.response?.data?.detail ?? ''
+      setError(detail.includes('rate-limited') ? 'AI models busy — try again shortly' : detail || 'AI analysis unavailable')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggle = () => {
+    if (!open) fetchExplanation()
+    setOpen(v => !v)
+  }
+
+
+  if (!result) return null
+
+  return (
+    <div className="ai-fab-wrapper">
+      {open && (
+        <div className="ai-fab-popover">
+          <div className="ai-fab-popover__header">
+            <span className="ai-fab-popover__badge">AI Analysis</span>
+            <button className="ai-fab-popover__close" onClick={() => setOpen(false)}>✕</button>
+          </div>
+          <div className="ai-fab-popover__body">
+            {loading && (
+              <div className="ai-fab-popover__skeleton">
+                {[95, 88, 92, 70].map((w, i) => (
+                  <div key={i} className="ai-fab-popover__skel-line" style={{ width: `${w}%` }} />
+                ))}
+              </div>
+            )}
+            {error && <p className="ai-fab-popover__error">{error}</p>}
+            {text  && <p className="ai-fab-popover__text">{text}</p>}
+          </div>
+        </div>
+      )}
+
+      <button className={`ai-fab ${open ? 'ai-fab--open' : ''}`} onClick={handleToggle} title="AI Analysis">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+        </svg>
+      </button>
+    </div>
+  )
+}
+
 export default function CellActionCard({ cell, calculating, onCalculate, calcError, form, result }) {
   const handleExportPdf = async () => {
     if (!result || !cell) {
@@ -418,11 +549,13 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
         housing_h:          toNum(form.housing_h),
         marge_mm:           toNum(form.marge_mm, 15),
         depth_of_discharge: toNum(form.depth_of_discharge, 80),
-        cell_gap_mm:        toNum(form.cell_gap_mm, 0),
+        cell_gap_mm:             toNum(form.cell_gap_mm, 0),
+        end_plate_thickness_mm:  toNum(form.end_plate_thickness_mm, 10),
+        cycles_per_day:          toNum(form.cycles_per_day, 1),
         config_mode:        form.config_mode,
         ...(form.config_mode === 'manual' && {
-          manual_series:   parseInt(form.manual_series)   || undefined,
-          manual_parallel: parseInt(form.manual_parallel) || undefined,
+          manual_series:   parseInt(form.manual_series, 10) || undefined,
+          manual_parallel: parseInt(form.manual_parallel, 10) || undefined,
         }),
       }
 
@@ -480,40 +613,15 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
       )}
 
       {result && (
-        <div style={{
-          marginTop: 8,
-          textAlign: 'center',
-        }}>
-          <div style={{
-            fontSize: '0.8rem',
-            fontWeight: 700,
-            letterSpacing: '0.08em',
-            color: result.verdict === 'ACCEPT' ? '#16a34a' : '#dc2626',
-          }}>
+        <div className="verdict-block">
+          <span className={`verdict-block__text verdict-block__text--${result.verdict === 'ACCEPT' ? 'accept' : 'reject'}`}>
             {result.verdict === 'ACCEPT' ? '✓ ACCEPT' : '✗ REJECT'}
-          </div>
+          </span>
           {result.verdict !== 'ACCEPT' && result.justification && (
-            <div
-              title={result.justification}
-              style={{
-                fontSize: '0.65rem',
-                fontWeight: 500,
-                color: '#dc2626',
-                marginTop: 4,
-                lineHeight: 1.3,
-                overflow: 'hidden',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-              }}
-            >
-              {result.justification}
-            </div>
+            <p className="verdict-block__reason">{result.justification}</p>
           )}
         </div>
       )}
-
-      <ExplainerPanel cell={cell} form={form} result={result} />
     </div>
   )
 }

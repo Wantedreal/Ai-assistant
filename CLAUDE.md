@@ -21,10 +21,12 @@ Electron (frontend/electron/main.cjs)
   └─ BrowserWindow → React (Vite dev server or dist/index.html)
         └─ Axios (http://localhost:8000/api/v1)
               └─ FastAPI backend
-                    ├─ SQLite via SQLAlchemy (384 battery cells)
+                    ├─ SQLite via SQLAlchemy (353+ battery cells — see battery_cells_with_manual.xlsx)
                     ├─ Core sizing engine (backend/app/core/engine.py)
                     └─ PDF export (backend/app/pdf.py)
 ```
+
+**Database master file:** `battery_cells_with_manual.xlsx` (project root) — 353 cells: 339 TUM/ISI + 14 manually extracted (12 CATL LFP/NMC + SVOLT-134Ah + SVOLT-196Ah Blade + SVOLT-184Ah Blade). Import via app Import button to populate SQLite. Remaining datasheets in `data_based/` (~44 PDFs: CALB 4, CATL 3, EVE 8, ETC 5, Ganfeng 4, GOTION 2, Higee 3, Lishen 6, REPT 2, Great Power 2, ETP 1, SVOLT-325Ah 1, YinLong 3).
 
 **Key data flow:** User fills form → `POST /api/v1/calculate` → deterministic algorithm (P = ⌈I/I_max⌉, S = ⌈max(V, E/(V·C·P·DoD))⌉) → geometry check vs housing → result + 3D render update.
 
@@ -42,7 +44,7 @@ winget install Python.Python.3.12 --accept-source-agreements --accept-package-ag
 # Create venv with 3.12 explicitly
 cd backend
 py -3.12 -m venv venv
-venv\Scripts\pip install --prefer-binary fastapi uvicorn sqlalchemy "pandas>=2.2" openpyxl pydantic python-multipart reportlab cadquery
+venv\Scripts\pip install --prefer-binary fastapi uvicorn sqlalchemy "pandas>=2.2" openpyxl pydantic python-multipart reportlab cadquery pyinstaller
 
 # Frontend
 cd frontend
@@ -96,13 +98,25 @@ cd backend
 venv\Scripts\pyinstaller.exe backend.spec --noconfirm --clean
 # Output: backend/dist/backend/backend.exe + _internal/
 
-# Step 2 — Frontend + installer
+# Step 2 — Frontend (Vite)
 cd frontend
-npm run electron:build:win
+npm run build
+
+# Step 3 — Electron packaging (two-step to avoid winCodeSign symlink issue)
+$env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
+npx electron-builder --win          # creates release/win-unpacked (ignore winCodeSign error)
+npx electron-builder --win nsis --prepackaged release/win-unpacked
 # Output: frontend/release/Battery Pack Designer Setup 1.0.0.exe
 ```
 
 Output installer is fully self-contained — no Python or Node.js needed on target machine.
+
+**winCodeSign / symlink issue (Windows without Developer Mode):**
+electron-builder downloads `winCodeSign` to run `rcedit.exe` (embeds the app icon into the exe). The package contains macOS dylib symlinks that 7zip cannot create without Windows Developer Mode enabled. The build scripts work around this by:
+1. Running `electron-builder --win` (ignores the winCodeSign failure — `release/win-unpacked/` is always created before the failure)
+2. Running `--prepackaged` for the NSIS step (skips winCodeSign entirely)
+
+**Permanent fix:** Enable Developer Mode in Windows → Settings → Privacy & Security → For Developers → Developer Mode → On. This grants symlink creation rights, rcedit runs, and the exe gets the BoltLogo icon embedded (visible in Explorer / taskbar).
 
 ## Key API Endpoints
 
@@ -137,16 +151,27 @@ Builds the scene in named `THREE.Group` layers (toggle with `setLayerVisible`):
 
 | Layer | Group name | Contents | Cell types |
 |-------|-----------|----------|------------|
-| Housing | `housing` | Transparent blue enclosure walls (open-top tray) | All |
+| Housing | `housing` | Transparent blue/red enclosure walls (open-top tray) | All |
+| Dimensions | `dimensions` | Blue module L/l/h dimension lines + amber X/Z margin indicators | All |
 | Cells | `cells` | Instanced cell bodies + edge outlines | All |
 | Terminals | `terminals` | Positive/negative terminal geometry | All |
 | Busbars | `busbars` | Nickel strips + series jumpers (cyl) or copper snake-path busbars (prismatic) | All |
 | Brackets | `brackets` | ABS plastic cross-bar grid top+bottom | Cylindrical only |
-| Insulation cards | `insulation_cards` | Orange Nomex sheets between series groups | Prismatic/Pouch |
-| Side plates | `side_plates` | Steel compression plates (side + end) | Prismatic/Pouch |
-| BMS | `bms` | Daly-style red aluminium heatsink PCB with balance pins and 3 power ports (B−/C−/P−) | All |
-| Balance wires | `balance_wires` | S+1 wires: 1 black (pack−) + S red, routed via harness plane to BMS pins | All |
-| Cables | `cables` | B+ red, B− black, P− orange, C− blue thick cables + brass output bolt terminals | All |
+| Separator cards | `separator_cards` | Orange Nomex sheets — S+1 total (S−1 inner + 2 outer) | Prismatic/Pouch |
+| End plates | `end_plates` | Compression end plates at ±X, thickness from `endPlateThick` slider | Prismatic/Pouch |
+| Side supports | `side_supports` | Steel side rails at ±Z, rail depth fixed at 8 mm | Prismatic/Pouch |
+
+**BMS / balance wires / cables removed from 3D scene** — too complex to maintain, not needed for pre-design.
+
+**Visual-only sliders (LayerControlPanel, fullscreen only — not sent to engine):**
+- Cell gap (0–5 mm) — also sent to engine
+- End plate thickness (0–30 mm) — also sent to engine for prismatic `L_raw`; pouch/cylindrical: visual only
+- Busbar width (5–60 mm) — controls busbar Z-stretch (`hBarW`); Y-thickness fixed 2.5 mm; never sent to engine
+
+**Margin annotations (dimensions group):**
+- X axis: end-plate-face ↔ housing inner wall (amber, at +Z front face)
+- Z axis: array Z-face ↔ housing inner wall (amber, at +X right face)
+- Y axis: removed (too cluttered)
 
 **Module-level constants** (change once, affect all builders):
 - `WALL_MM = 2` — housing wall thickness used in every `yCenter` calculation
@@ -233,7 +258,7 @@ See `/reference_3D` for reference images of the target assembly.
 
 - **Cell schematic** (`frontend/src/components/CellSchematic.jsx`): pure inline SVG, no deps. Renders differently per cell type — Cylindrical (side view + inset top-view circle), Prismatic (isometric 3-face box), Pouch (soft-corner foil with tabs). Dimensions are proportional to real cell data. Positive terminal red, negative blue. Dimension annotation lines included. Empty state shown when no cell selected. Replaces the static `Projectscard.png` image in `CellSelectorCard`.
 
-- **Database import/sync** (`backend/app/importer.py`): reads `.xlsx` with openpyxl (no pandas), truncates + re-inserts `cellules` table, saves source path to `backend/data/import_config.json`. Two buttons added to bottom of `CellSelectorCard` — **Import** (file picker upload) and **Sync** (re-reads from saved path). Sync disabled until first Import. Both styled as `modern-btn`. After success, `loadCells()` in `App.jsx` refreshes the dropdown. `frontend/electron/preload.js` exposes `window.electronAPI.getFilePath(file)` via `webUtils` so Electron can pass the real filesystem path to the backend for future Sync calls.
+- **Database import/sync** (`backend/app/importer.py`): reads `.xlsx` with openpyxl (no pandas), truncates + re-inserts `cellules` table, saves source path to `backend/data/import_config.json`. Extended format now also reads `Temp_Min_C`, `Temp_Max_C`, `Temp_Max_Charge_C`, `VCharge_Max_V` columns (mapped to `temp_min_c`, `temp_max_c`, `temp_max_charge_c`, `v_charge_max` in DB). Two buttons added to bottom of `CellSelectorCard` — **Import** (file picker upload) and **Sync** (re-reads from saved path). Sync disabled until first Import. Both styled as `modern-btn`. After success, `loadCells()` in `App.jsx` refreshes the dropdown. `frontend/electron/preload.js` exposes `window.electronAPI.getFilePath(file)` via `webUtils` so Electron can pass the real filesystem path to the backend for future Sync calls.
 
 - **Phase 1 — Cell Data Model Extension** (`backend/app/models/cellule.py`, `backend/app/schemas/battery.py`, `backend/app/importer.py`): Added 10 nullable columns to `Cellule` ORM and `CellRead` schema — `fabricant`, `chimie`, `cycle_life`, `dod_reference_pct`, `c_rate_max_discharge`, `c_rate_max_charge`, `energie_volumique_wh_l`, `eol_capacity_pct`, `energie_massique_wh_kg`, `cutoff_voltage_v`. Two Alembic migrations applied (`migrations/versions/`). Importer updated to read TUM/ISI extended Excel format (auto-detected via `Product_Number` header) with deduplication (most-filled row wins, tie-break by CycleLife), chemistry normalization (NMC variants → NMC, Ni-Rich → NMC), dod_reference_pct fraction→percentage conversion, and outlier removal (energie_volumique > 800 Wh/L → NULL). Frontend: chemistry pill badge in search dropdown and cell detail, fabricant line in both, phase1 spec row (cycles @ DoD, C-rate, cutoff V), chemistry color badge in CellSchematic SVG. **3 roadmap fields absent from TUM/ISI dataset:** `temp_min_c`, `temp_max_c`, `self_discharge_pct_month` — not added; needed before Phase 2 temperature check and calendar aging sections.
 
@@ -251,9 +276,25 @@ See `/reference_3D` for reference images of the target assembly.
 
 - **Phase 7 — BMS Wiring Topology: SKIPPED** — not needed for a pre-design tool. BMS manufacturer datasheets cover wiring; topology is identical across all S counts.
 
+- **3D visual controls + dimension annotations:**
+  - `end_plate_thickness_mm` slider (LayerControlPanel + ConstraintsForm) — sent to engine for prismatic `L_raw = S×h + (S−1)×g + 2×ep`; pouch/cylindrical: visual only. Side rail depth fixed at 8 mm (not tied to end plate).
+  - Busbar width slider — controls `hBarW` (Z-stretch); `busbarFlatH = 2.5 mm` fixed; never sent to engine.
+  - ConstraintsForm hides end plate + busbar rows for cylindrical cells (`isPrismatic` guard on `cell` prop).
+  - `buildDimensionAnnotations(housingL, housingW, housingH, result)` — blue module L/l/h lines + amber X and Z margin indicators (Y removed). Lines use `depthTest: false` to render through geometry; labels are `THREE.Sprite` with `CanvasTexture`.
+  - BMS, balance wires, cables removed from 3D scene entirely.
+  - `layers` state in `PackViewer3D` uses lazy `useState` initialiser that reads `result?.cell_used?.type_cellule` at mount — fullscreen modal opens with correct layer visibility immediately.
+
+- **PDF report (§4 — opposite-sides dim layout, no overlap):**
+  - §4.1 Top view — housing L at **bottom**, module L_mod at **top**; housing l at **right**, module l_mod at **left** (90° CCW rotated label via `Group.transform=(0,1,-1,0,tx,ty)`). Margins: `left=50, right=76, bottom=42, top=34`. Amber Δ labels use `_delta_label()` helper with white backing rect (fontSize 7.5, threshold 8 pt).
+  - §4.2 Isometric view — `_dim_iso(p1, p2, label, side, offset, color)` helper. Housing dims (gray): A→B/B→Cp/B→F with `side=1, offset=14`. Module dims (blue): L_mod on mE→mF `side=-1`, l_mod on mF→mG `side=+1`, h_mod on mA→mE `side=-1` — each on a different edge/face so no shared corner and no overlap.
+  - `end_plate_thickness_mm` in input table (prismatic only); end plate dark rects in top-view schematic.
+
+- **STEP export sync with 3D:** `ep` from request, S+1 insulation cards at 75% height, `railThick = 8` fixed.
+
+- **DB schema fix:** `battery_cells.db` was missing `temp_min_c`, `temp_max_c`, `temp_max_charge_c`, `v_charge_max` columns — added via `ALTER TABLE`. These are imported from the `.xlsx` but were never migrated to the existing DB file.
+
 **uncompleted:**
 - **EVA foam / heat shrink** — insulation wrap over cell array (cylindrical and prismatic)
-- **Option 4 — Housing-geometry-based positioning**: BMS, cables, and harness should attach to housing walls (flush against inner face) rather than to cell array bounds. Requires passing `housingL, housingW` into `buildBMS()`. BMS Z = `housingW / 2 - WALL_MM - bmsThick / 2`; harness Y = `housingH / 2 - 4`; cable exits at `housingH / 2`.
 
 ## Layout Notes
 
@@ -293,6 +334,16 @@ The bottom row (`bottom-row`) is a flex row with `align-items: stretch`. Cards i
 - Health check URL changed from `http://localhost:8000` to `http://127.0.0.1:8000` (IPv4 explicit — avoids IPv6 resolution issue on Windows).
 - Backend spawn now sets `cwd: path.dirname(binaryPath)` so `_internal/` is always found relative to the exe.
 - Added `backendLastOutput` capture (stderr + stdout) that appears in the error dialog if health check fails.
+- `resolveIcon()` updated: added `../icon.ico` and `../icon.png` as first candidates (relative to `electron/` inside the asar) so the window icon resolves correctly in production without relying on `build/` which is not bundled.
+
+**`backend/backend.spec`**
+- Removed `openpyxl` from the `excludes` list — it is needed by `importer.py` for the Import button to work in the built exe.
+
+**App icon (`build/icon.ico`, `build/icon.png`, `public/icon.ico`, `public/icon.png`)**
+- All four regenerated from the BoltLogo SVG polygon coordinates using Pillow. Previous `icon.png` was a wrong 1288×1296 image. New ICO has 6 sizes (16, 32, 48, 64, 128, 256 px) with diagonal gradient fill and glow. `public/icon.ico` is bundled into the asar by Vite so `resolveIcon()` finds it at runtime.
+
+**`build-full.bat` and `build-fast.bat`**
+- Electron packaging step changed to two-step approach: `electron-builder --win` (exit code ignored — creates `win-unpacked` before the winCodeSign failure) then `electron-builder --win nsis --prepackaged release\win-unpacked` (no winCodeSign needed). `CSC_IDENTITY_AUTO_DISCOVERY=false` set for both steps.
 - Added log file at `%APPDATA%\backend.log` for post-mortem debugging.
 
 **`frontend/src/components/PackViewer3D.jsx`**
@@ -325,4 +376,4 @@ Copy `frontend/release/Battery Pack Designer Setup 1.0.0.exe` to target machine 
 If the app fails on a very old machine: install [VC++ 2015-2022 Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) (required by Python 3.13, usually pre-installed on Windows 10/11).
 
 ## Your task
-I want you now to review the code entirely I already putted a graph that explain the entire structure you can use the plugin 
+I want you now to review the code I already make a graph to explain for you the structure and content of the code , and we will work on the step exportation, the problem is it doesn"t really export xhat we are seeing especially on the prismatic cells I don't see the terminals the busbars really etc

@@ -22,8 +22,9 @@ function InputRow({ label, unit, value, onChange, min = 0, step = 'any' }) {
   )
 }
 
-export default function ConstraintsForm({ form, onFieldChange }) {
+export default function ConstraintsForm({ form, onFieldChange, cell }) {
   const set = key => val => onFieldChange(key, val)
+  const isPrismatic = !cell || (cell.type_cellule || '').toLowerCase() !== 'cylindrical'
 
   return (
     <div className="headline-card">
@@ -34,7 +35,7 @@ export default function ConstraintsForm({ form, onFieldChange }) {
           <SectionLabel>Electrical targets</SectionLabel>
           <div className="field-group">
             <InputRow label="Energy"  unit="Wh" value={form.energie_cible_wh}  onChange={set('energie_cible_wh')} min={1} />
-            <InputRow label="Voltage" unit="V"   value={form.tension_cible_v}   onChange={set('tension_cible_v')}   min={0} />
+            <InputRow label="Voltage" unit="V"   value={form.tension_cible_v}   onChange={set('tension_cible_v')}   min={0.001} />
             <InputRow label="Current" unit="A"   value={form.courant_cible_a}     onChange={set('courant_cible_a')}   min={0.001} />
             <InputRow label="DoD"           unit="%"         value={form.depth_of_discharge}  onChange={set('depth_of_discharge')} min={1} step={1} />
           </div>
@@ -48,6 +49,10 @@ export default function ConstraintsForm({ form, onFieldChange }) {
             <InputRow label="Height h" unit="mm" value={form.housing_h}       onChange={set('housing_h')}       min={1} />
             <InputRow label="Margin"   unit="mm" value={form.marge_mm}        onChange={set('marge_mm')}        min={0} />
             <InputRow label="Cell gap" unit="mm" value={form.cell_gap_mm}     onChange={set('cell_gap_mm')}     min={0} step={0.1} />
+            {isPrismatic && <>
+              <InputRow label="End plate"    unit="mm" value={form.end_plate_thickness_mm} onChange={set('end_plate_thickness_mm')} min={0} step={1}   />
+              <InputRow label="Busbar width"  unit="mm" value={form.busbar_thickness_mm}   onChange={set('busbar_thickness_mm')}    min={0} step={1} />
+            </>}
           </div>
         </div>
 

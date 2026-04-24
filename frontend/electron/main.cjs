@@ -17,6 +17,12 @@ app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 // Simple isDev check - if app is in unpacked directory it's dev mode
 const isDev = process.env.ELECTRON_DEV === 'true' || process.argv.some(arg => arg === '--dev')
 
+// Suppress Capgemini corporate SSL-inspection certificate errors in dev.
+// The app only talks to localhost — no real HTTPS is used.
+if (isDev) {
+  app.commandLine.appendSwitch('ignore-certificate-errors')
+}
+
 // Global backend process reference
 let backendProcess = null
 let mainWindow = null
@@ -150,14 +156,26 @@ async function waitForBackendHealth() {
 /**
  * Create the main application window
  */
+function resolveIcon() {
+  const candidates = [
+    path.join(__dirname, '../icon.ico'),   // production: dist/ root inside asar
+    path.join(__dirname, '../icon.png'),   // production fallback
+    path.join(__dirname, '../build/icon.ico'), // dev: project build/
+    path.join(__dirname, '../build/icon.png'),
+    path.join(__dirname, '../public/icon.svg'),
+  ]
+  return candidates.find(p => fs.existsSync(p)) || undefined
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 800,
-    minHeight: 600,
+    minWidth: 320,
+    minHeight: 400,
     show: false,   // hidden until content is ready
     backgroundColor: '#1a1c23',
+    icon: resolveIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

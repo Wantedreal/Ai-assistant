@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 
 import { apiService } from './services/api'
 
 import Header from './components/Header'
-import { CellSelectorCard } from './components/CellSelector'
+import { CellSelectorCard, AIFab } from './components/CellSelector'
 import CellActionCard from './components/CellSelector'
 import ConstraintsForm from './components/ConstraintsForm'
 import PackViewer3DSkeleton from './components/PackViewer3DSkeleton'
@@ -48,7 +48,9 @@ export default function App() {
     housing_l_small:    318,
     housing_h:          71,
     marge_mm:           15,
-    cell_gap_mm:        1.5,
+    cell_gap_mm:             1.5,
+    end_plate_thickness_mm:  10,
+    busbar_thickness_mm:     15,
     depth_of_discharge: 80,
     config_mode:        'auto',
     manual_series:      '',
@@ -92,23 +94,29 @@ export default function App() {
 
   useEffect(() => { loadCells() }, [loadCells])
 
-  // ── Zoom-to-fit: scale down when viewport is shorter than content ──
+
+  // ── Zoom-to-fit: scale down when viewport is shorter than design height ──
   const wrapperRef = useRef(null)
   useEffect(() => {
-    const DESIGN_HEIGHT = 760   // recalibrated for tighter 360px row height
-    const MIN_ZOOM      = 0.45  // never shrink below this
+    const DESIGN_HEIGHT = 760
+    const MIN_ZOOM      = 0.45
 
     const updateZoom = () => {
       const vh = window.innerHeight
       const zoom = Math.min(1, Math.max(MIN_ZOOM, vh / DESIGN_HEIGHT))
-      if (wrapperRef.current) {
-        wrapperRef.current.style.zoom = zoom
-      }
+      if (wrapperRef.current) wrapperRef.current.style.zoom = zoom
     }
 
+    // Apply immediately for a rough first paint, then re-apply after 300 ms
+    // so Electron's fully-settled window height overwrites any stale value
+    // reported during initial render (setTimeout(0) is not long enough).
     updateZoom()
+    const t = setTimeout(updateZoom, 300)
     window.addEventListener('resize', updateZoom)
-    return () => window.removeEventListener('resize', updateZoom)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('resize', updateZoom)
+    }
   }, [])
 
   const cell = cells.find(c => c.id === selectedId) ?? null
@@ -151,11 +159,12 @@ export default function App() {
       marge_mm:           toNum(form.marge_mm, 15),
       depth_of_discharge: toNum(form.depth_of_discharge, 80),
       config_mode:        form.config_mode,
-      cell_gap_mm:        toNum(form.cell_gap_mm, 0),
-      cycles_per_day:     toNum(form.cycles_per_day, 1),
+      cell_gap_mm:             toNum(form.cell_gap_mm, 0),
+      end_plate_thickness_mm:  toNum(form.end_plate_thickness_mm, 10),
+      cycles_per_day:          toNum(form.cycles_per_day, 1),
       ...(form.config_mode === 'manual' && {
-        manual_series:   parseInt(form.manual_series)   || undefined,
-        manual_parallel: parseInt(form.manual_parallel) || undefined,
+        manual_series:   parseInt(form.manual_series,   10) > 0 ? parseInt(form.manual_series,   10) : undefined,
+        manual_parallel: parseInt(form.manual_parallel, 10) > 0 ? parseInt(form.manual_parallel, 10) : undefined,
       }),
     }
 
@@ -201,6 +210,7 @@ export default function App() {
   }
 
   return (
+    <>
     <div className="page-wrapper" ref={wrapperRef}>
 
       <Header />
@@ -224,6 +234,7 @@ export default function App() {
           <ConstraintsForm
             form={form}
             onFieldChange={handleFieldChange}
+            cell={cell}
           />
 
           {/* ── RIGHT — 3D Pack visualization ── */}
@@ -240,6 +251,10 @@ export default function App() {
                   isFullscreen={false}
                   cellGap={toNum(form.cell_gap_mm, 0)}
                   onCellGapChange={v => handleFieldChange('cell_gap_mm', v)}
+                  endPlateThickness={toNum(form.end_plate_thickness_mm, 10)}
+                  onEndPlateChange={v => handleFieldChange('end_plate_thickness_mm', v)}
+                  busbarThickness={toNum(form.busbar_thickness_mm, 1)}
+                  onBusbarHeightChange={v => handleFieldChange('busbar_thickness_mm', v)}
                   stepPayload={lastPayload}
                 />
               </Suspense>
@@ -362,6 +377,10 @@ export default function App() {
                   isFullscreen={true}
                   cellGap={toNum(form.cell_gap_mm, 0)}
                   onCellGapChange={v => handleFieldChange('cell_gap_mm', v)}
+                  endPlateThickness={toNum(form.end_plate_thickness_mm, 10)}
+                  onEndPlateChange={v => handleFieldChange('end_plate_thickness_mm', v)}
+                  busbarThickness={toNum(form.busbar_thickness_mm, 1)}
+                  onBusbarHeightChange={v => handleFieldChange('busbar_thickness_mm', v)}
                   stepPayload={lastPayload}
                 />
               </Suspense>
@@ -397,5 +416,8 @@ export default function App() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
+
+    <AIFab result={result} cell={cell} form={form} />
+    </>
   )
 }

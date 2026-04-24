@@ -21,6 +21,8 @@ export class PackAssemblyBuilder {
     this.isElectron = isElectron
     this.groups = new Map()
     this.cellGap = 1.5
+    this.endPlateThick = 10
+    this.busbarThick = 15
     this._bmsPos = null
   }
 
@@ -35,6 +37,9 @@ export class PackAssemblyBuilder {
     this.cellGap = gapMm
   }
 
+  setEndPlateThickness(mm) { this.endPlateThick = mm }
+  setBusbarThickness(mm)   { this.busbarThick   = mm }
+
   /** Provide a pre-loaded GLTF object (from GLTFLoader) for mesh-based cylindrical cells. */
   setCellModel(gltf) {
     this._cellGltf = gltf
@@ -48,6 +53,21 @@ export class PackAssemblyBuilder {
   /** Provide a pre-loaded GLTF object for the prismatic cell busbars. */
   setPrismaticBusbarModel(gltf) {
     this._prismaticBusbarGltf = gltf
+  }
+
+  /** Provide a pre-loaded GLTF object for the prismatic cell separator cards. */
+  setSeparatorModel(gltf) {
+    this._separatorGltf = gltf
+  }
+
+  /** Provide a pre-loaded GLTF object for the prismatic end plates (±X extremes). */
+  setEndPlateModel(gltf) {
+    this._endPlateGltf = gltf
+  }
+
+  /** Provide a pre-loaded GLTF object for the prismatic side support plates (±Z extremes). */
+  setSideSupportModel(gltf) {
+    this._sideSupportGltf = gltf
   }
 
 
@@ -162,13 +182,131 @@ export class PackAssemblyBuilder {
     const type = (cell_used.type_cellule || 'Pouch').toLowerCase()
 
     if (type !== 'cylindrical') {
-      this._buildPrismaticSidePlates(S, P, cell_used, housingH)
+      this._buildPrismaticEndPlates(S, P, cell_used, housingH)
+      this._buildPrismaticSideSupports(S, P, cell_used, housingH)
     }
+  }
+
+  buildDimensionAnnotations(housingL, housingW, housingH, result) {
+    const group = new THREE.Group()
+    group.name = 'dimensions'
+
+    const hL = housingL / 2, hW = housingW / 2, hH = housingH / 2
+
+    // Use calculated module dimensions when available, fall back to housing
+    const hasResult = result?.dimensions_raw && result.nb_serie > 0
+    const arrL = hasResult ? result.dimensions_raw.longueur_mm : housingL
+    const arrW = hasResult ? result.dimensions_raw.largeur_mm  : housingW
+    const arrH = hasResult ? result.dimensions_raw.hauteur_mm  : housingH
+    const aL = arrL / 2, aW = arrW / 2, aH = arrH / 2
+
+    const maxDim  = Math.max(housingL, housingW, housingH)
+    const offset  = maxDim * 0.10 + 18
+    const tickLen = offset * 0.38
+    const spriteW = Math.max(50, maxDim * 0.18)
+    const spriteH = spriteW * 0.28
+
+    const moduleMat = new THREE.LineBasicMaterial({
+      color: '#60a5fa', transparent: true, opacity: 0.95, depthTest: false,
+    })
+    const marginMat = new THREE.LineBasicMaterial({
+      color: '#f59e0b', transparent: true, opacity: 0.95, depthTest: false,
+    })
+
+    const addLine = (mat, ...pts) => {
+      const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(...p)))
+      group.add(new THREE.Line(g, mat))
+    }
+
+    const addSprite = (text, x, y, z, color = '#93c5fd') => {
+      const canvas = document.createElement('canvas')
+      canvas.width  = 512
+      canvas.height = 128
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, 512, 128)
+      ctx.font      = 'bold 52px monospace'
+      ctx.fillStyle = color
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(text, 256, 64)
+      const tex = new THREE.CanvasTexture(canvas)
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false })
+      const sp  = new THREE.Sprite(mat)
+      sp.position.set(x, y, z)
+      sp.scale.set(spriteW * 2.2, spriteH * 2.2, 1)
+      group.add(sp)
+    }
+
+    // ── Module L dimension (X axis) — below array, at +Z front face ──────────
+    const zDim = aW + offset * 0.55
+    const yBot = -aH - offset * 0.85
+    addLine(moduleMat, [-aL, yBot, zDim], [aL, yBot, zDim])
+    addLine(moduleMat, [-aL, yBot - tickLen, zDim], [-aL, yBot + tickLen, zDim])
+    addLine(moduleMat, [ aL, yBot - tickLen, zDim], [ aL, yBot + tickLen, zDim])
+    addLine(moduleMat, [-aL, -aH, zDim], [-aL, yBot, zDim])
+    addLine(moduleMat, [ aL, -aH, zDim], [ aL, yBot, zDim])
+    addSprite(`L = ${Math.round(arrL)} mm`, 0, yBot - tickLen - spriteH * 1.5, zDim)
+
+    // ── Module l dimension (Z axis) — below array, at +X right face ──────────
+    const xRight = aL + offset * 0.55
+    addLine(moduleMat, [xRight, yBot, -aW], [xRight, yBot, aW])
+    addLine(moduleMat, [xRight, yBot - tickLen, -aW], [xRight, yBot + tickLen, -aW])
+    addLine(moduleMat, [xRight, yBot - tickLen,  aW], [xRight, yBot + tickLen,  aW])
+    addLine(moduleMat, [xRight, -aH, -aW], [xRight, yBot, -aW])
+    addLine(moduleMat, [xRight, -aH,  aW], [xRight, yBot,  aW])
+    addSprite(`l = ${Math.round(arrW)} mm`, xRight + spriteW * 1.3, yBot - tickLen - spriteH * 1.5, 0)
+
+    // ── Module h dimension (Y axis) — at +X right, +Z front corner ───────────
+    const xH = aL + offset * 0.55, zH = aW + offset * 0.55
+    addLine(moduleMat, [xH, -aH, zH], [xH, aH, zH])
+    addLine(moduleMat, [xH - tickLen, -aH, zH], [xH + tickLen, -aH, zH])
+    addLine(moduleMat, [xH - tickLen,  aH, zH], [xH + tickLen,  aH, zH])
+    addLine(moduleMat, [aL, -aH, zH], [xH, -aH, zH])
+    addLine(moduleMat, [aL,  aH, zH], [xH,  aH, zH])
+    addSprite(`h = ${Math.round(arrH)} mm`, xH + spriteW * 1.3, 0, zH)
+
+    // ── Margin annotations: array outer face ↔ housing inner wall, all 3 axes ──
+    if (hasResult) {
+      const marginL = result.marges_reelles?.L ?? (housingL - arrL) / 2
+      const marginW = result.marges_reelles?.W ?? (housingW - arrW) / 2
+      const marginH = result.marges_reelles?.H ?? (housingH - arrH) / 2
+      const tickS   = tickLen * 0.42
+
+      // ── X axis margins (between end plate face and housing inner wall) ────────
+      // Shown at mid-height, slightly in front of array face (+Z)
+      const mZ = aW + offset * 0.15
+      const iWallX = hL - WALL_MM
+      addLine(marginMat, [ aL, 0, mZ], [ iWallX, 0, mZ])
+      addLine(marginMat, [ aL, -tickS, mZ], [ aL,    tickS, mZ])
+      addLine(marginMat, [ iWallX, -tickS, mZ], [ iWallX, tickS, mZ])
+      addSprite(`${Math.round(marginL)} mm`, (aL + iWallX) / 2, tickS + spriteH * 1.2, mZ, '#fbbf24')
+
+      addLine(marginMat, [-aL, 0, mZ], [-iWallX, 0, mZ])
+      addLine(marginMat, [-aL, -tickS, mZ], [-aL,     tickS, mZ])
+      addLine(marginMat, [-iWallX, -tickS, mZ], [-iWallX, tickS, mZ])
+      addSprite(`${Math.round(marginL)} mm`, -(aL + iWallX) / 2, tickS + spriteH * 1.2, mZ, '#fbbf24')
+
+      // ── Z axis margins (between array Z face and housing inner wall) ──────────
+      // Shown at mid-height, to the right of array (+X)
+      const mX = aL + offset * 0.15
+      const iWallZ = hW - WALL_MM
+      addLine(marginMat, [mX, 0,  aW], [mX, 0,  iWallZ])
+      addLine(marginMat, [mX - tickS, 0,  aW],    [mX + tickS, 0,  aW])
+      addLine(marginMat, [mX - tickS, 0,  iWallZ], [mX + tickS, 0,  iWallZ])
+      addSprite(`${Math.round(marginW)} mm`, mX, tickS + spriteH * 1.2,  (aW + iWallZ) / 2, '#fbbf24')
+
+      addLine(marginMat, [mX, 0, -aW], [mX, 0, -iWallZ])
+      addLine(marginMat, [mX - tickS, 0, -aW],    [mX + tickS, 0, -aW])
+      addLine(marginMat, [mX - tickS, 0, -iWallZ], [mX + tickS, 0, -iWallZ])
+      addSprite(`${Math.round(marginW)} mm`, mX, tickS + spriteH * 1.2, -(aW + iWallZ) / 2, '#fbbf24')
+    }
+
+    this._addGroup('dimensions', group)
   }
 
   applyRotation() {
     // Rotates the entire cell array 90 degrees to fit the housing
-    const groupsToRotate = ['cells', 'terminals', 'busbars', 'brackets', 'insulation_cards', 'side_plates', 'bms', 'balance_wires', 'cables']
+    const groupsToRotate = ['cells', 'terminals', 'busbars', 'brackets', 'separator_cards', 'end_plates', 'side_supports']
     groupsToRotate.forEach(name => {
       const g = this.groups.get(name)
       if (g) {
@@ -867,12 +1005,10 @@ export class PackAssemblyBuilder {
     const termRadius = Math.min(sizeX * 0.32, sizeZ * 0.12, 7)
 
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
-    const busbarThickness = 1.0
-    // termY = yCenter + bodyH/2 + 2 (cap center+1). Terminal base top = termY + 1.55 + 1.25 = termY + 2.8
-    // Busbar sits above terminal base top with 0.5mm clearance
-    const termYLocal = yCenter + bodyH / 2 + 2
+    const busbarFlatH = 2.5                      // fixed copper strip Y-thickness (mm)
+    const termYLocal  = yCenter + bodyH / 2 + 2
     const termBaseTop = termYLocal + 2.8
-    const busbarY = termBaseTop + 0.5 + busbarThickness / 2
+    const busbarY     = termBaseTop + 0.5 + busbarFlatH / 2
 
     // Neutral grey — brushed aluminium / steel busbar
     const copperMat = this.isElectron
@@ -885,10 +1021,11 @@ export class PackAssemblyBuilder {
     const startX = -(S * stepX) / 2 + stepX / 2
     const startZ = -(P * stepZ) / 2 + stepZ / 2
 
-    // Bar dimensions: span both terminal positions so bars look uniform across all rows
-    const hBarW = posOffZ * 2 + termRadius * 2  // Z width of horiz bars — covers neg→pos span
-    const hBarX = stepX + termRadius * 2        // X width of horizontal bars
-    const vBarW = termRadius * 2 + 2            // X width of vertical (row-transition) bars
+    // hBarW: Z-width (stretch) controlled by busbarThick; minimum covers neg→pos terminal span
+    const minHBarW = posOffZ * 2 + termRadius * 2
+    const hBarW = Math.max(minHBarW, this.busbarThick)  // user stretches the bar width in Z
+    const hBarX = stepX + termRadius * 2                // X span — bridges two terminal centres
+    const vBarW = termRadius * 2 + 2                    // X width of row-transition bars
 
     // Snake path: within each parallel row, bars go alternately R→L / L→R.
     // A single vertical bar at each row-transition edge creates one Pack+ and one Pack-.
@@ -925,7 +1062,7 @@ export class PackAssemblyBuilder {
 
     // Horizontal bars (series junctions within each row)
     if (hBars.length > 0) {
-      const hGeom = new THREE.BoxGeometry(hBarX, busbarThickness, hBarW)
+      const hGeom = new THREE.BoxGeometry(hBarX, busbarFlatH, hBarW)
       const hMesh = new THREE.InstancedMesh(hGeom, copperMat, hBars.length)
       if (!this.isElectron) hMesh.castShadow = true
       hBars.forEach((b, idx) => {
@@ -940,7 +1077,7 @@ export class PackAssemblyBuilder {
       const vGroup = new THREE.Group()
       vBars.forEach(b => {
         const barLen = Math.max(b.len + vBarW, vBarW)
-        const vGeom = new THREE.BoxGeometry(vBarW, busbarThickness, barLen)
+        const vGeom = new THREE.BoxGeometry(vBarW, busbarFlatH, barLen)
         const vMesh = new THREE.Mesh(vGeom, copperMat)
         vMesh.position.set(b.x, busbarY, b.z)
         if (!this.isElectron) vMesh.castShadow = true
@@ -964,9 +1101,8 @@ export class PackAssemblyBuilder {
     const negOffZ = -sizeZ * TERM_OFFSET_RATIO
 
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
-    const busbarThickMm = 2.5  // target busbar thickness in scene mm
-    // Busbar sits flush on top of the terminal tabs
-    const busbarY = yCenter + bodyH / 2 + busbarThickMm / 2 + 0.2
+    const busbarFlatH = 2.5  // fixed Y-thickness of the copper strip (mm)
+    const busbarY     = yCenter + bodyH / 2 + busbarFlatH / 2 + 0.2
 
     const startX = -(S * stepX) / 2 + stepX / 2
     const startZ = -(P * stepZ) / 2 + stepZ / 2
@@ -985,12 +1121,13 @@ export class PackAssemblyBuilder {
 
     // Terminal base radius (same formula as _buildPrismaticCells)
     const termRadius = Math.min(sizeX * 0.32, sizeZ * 0.12, 7)
-    // Bar dimensions: X = series pitch + overhang past each terminal; Z = terminal diameter + margin
-    const hBarX   = stepX + termRadius * 2
-    const hBarW   = termRadius * 2 + 2
-    const targetX = hBarX
-    const targetY = busbarThickMm
-    const targetZ = hBarW
+    // Bar dimensions: X = series pitch + terminal overhang; Z = user-controlled stretch width
+    const hBarX     = stepX + termRadius * 2
+    const minHBarW  = termRadius * 2 + 2
+    const hBarW     = Math.max(minHBarW, this.busbarThick)  // Z stretch controlled by slider
+    const targetX   = hBarX
+    const targetY   = busbarFlatH
+    const targetZ   = hBarW
 
     const scaleX = modelSize.x > 0 ? targetX / modelSize.x : 1
     const scaleY = modelSize.y > 0 ? targetY / modelSize.y : 1
@@ -1181,71 +1318,315 @@ export class PackAssemblyBuilder {
   }
 
   _buildPrismaticInsulationCards(S, P, cell_used, housingH) {
-    if (S < 2) return
+    if (this._separatorGltf) {
+      this._buildSeparatorCardsFromGLTF(S, P, cell_used, housingH)
+      return
+    }
 
-
-    const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
-    const sizeX = cell_used.hauteur_mm
-    const sizeZ = cell_used.largeur_mm
-    const stepX = sizeX + this.cellGap
-    const stepZ = sizeZ + this.cellGap
-    const startX = -(S * stepX) / 2 + stepX / 2
+    const bodyH   = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
+    const sizeX   = cell_used.hauteur_mm
+    const sizeZ   = cell_used.largeur_mm
+    const stepX   = sizeX + this.cellGap
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
-    const cardW = P * stepZ
+    // Trim to exact cell face width; height reduced so cards sit inside the cell stack
+    const cardW   = P * sizeZ + (P - 1) * this.cellGap
+    const cardH   = bodyH * 0.75
+    const geom    = new THREE.BoxGeometry(0.3, cardH, cardW)
+    const mat     = new THREE.MeshStandardMaterial({ color: '#f97316', metalness: 0.0, roughness: 0.9 })
 
-    const geom = new THREE.BoxGeometry(0.3, bodyH, cardW)
-    const mat  = new THREE.MeshStandardMaterial({ color: '#f97316', metalness: 0.0, roughness: 0.9 })
-    const mesh = new THREE.InstancedMesh(geom, mat, S - 1)
+    // S+1 cards: S-1 between cells + 1 between each end plate and the adjacent cell
+    const total    = S + 1
+    const mesh     = new THREE.InstancedMesh(geom, mat, total)
+    const arrayHalfX = (S * stepX - this.cellGap) / 2
+    const startX   = -(S * stepX) / 2 + stepX / 2
 
+    // Inner cards (between each pair of series cells)
     for (let s = 0; s < S - 1; s++) {
       const cardX = startX + s * stepX + stepX / 2
       mesh.setMatrixAt(s, new THREE.Matrix4().makeTranslation(cardX, yCenter, 0))
     }
+    // Outer cards (between end plate and adjacent cell)
+    mesh.setMatrixAt(S - 1, new THREE.Matrix4().makeTranslation( arrayHalfX, yCenter, 0))
+    mesh.setMatrixAt(S,     new THREE.Matrix4().makeTranslation(-arrayHalfX, yCenter, 0))
     mesh.instanceMatrix.needsUpdate = true
 
     const group = new THREE.Group()
-    group.name = 'insulation_cards'
+    group.name = 'separator_cards'
     group.add(mesh)
 
-    this._addGroup('insulation_cards', group)
+    this._addGroup('separator_cards', group)
   }
 
-  _buildPrismaticSidePlates(S, P, cell_used, housingH) {
-
-    const bodyH = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
-    const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
-    const sizeX = cell_used.hauteur_mm
-    const sizeZ = cell_used.largeur_mm
-    const stepX = sizeX + this.cellGap
-    const stepZ = sizeZ + this.cellGap
-    // Outer face of the last cell (no phantom gap beyond the array)
+  _buildSeparatorCardsFromGLTF(S, P, cell_used, housingH) {
+    const sizeX      = cell_used.hauteur_mm
+    const sizeZ      = cell_used.largeur_mm
+    const bodyH      = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
+    const stepX      = sizeX + this.cellGap
+    const stepZ      = sizeZ + this.cellGap
+    const startX     = -(S * stepX) / 2 + stepX / 2
+    const startZ     = -(P * stepZ) / 2 + stepZ / 2
+    const yCenter    = (-housingH / 2) + WALL_MM + bodyH / 2
     const arrayHalfX = (S * stepX - this.cellGap) / 2
-    const arrayHalfZ = (P * stepZ - this.cellGap) / 2
+    // S+1 separator planes × P parallel rows: (S-1) inner + 2 outer (end-plate/cell interfaces)
+    const total      = (S + 1) * P
 
-    const mat = new THREE.MeshStandardMaterial({ color: '#6b7280', metalness: 0.4, roughness: 0.6 })
+    const gltfMeshes = []
+    this._separatorGltf.scene.updateMatrixWorld(true)
+    this._separatorGltf.scene.traverse(obj => { if (obj.isMesh) gltfMeshes.push(obj) })
+
+    if (gltfMeshes.length === 0) {
+      console.warn('SeparatorCard GLB: no meshes found, falling back to procedural')
+      this._separatorGltf = null
+      this._buildPrismaticInsulationCards(S, P, cell_used, housingH)
+      return
+    }
+
+    const box = new THREE.Box3()
+    gltfMeshes.forEach(m => box.expandByObject(m))
+    const modelSize   = new THREE.Vector3()
+    const modelCenter = new THREE.Vector3()
+    box.getSize(modelSize)
+    box.getCenter(modelCenter)
+
+    // GLTF axis → scene axis:
+    //   GLTF X (wide face, ~175 mm) → scene Z (largeur_mm, parallel axis)
+    //   GLTF Y (tall face, ~118 mm) → scene Y (longueur_mm, standing axis)
+    //   GLTF Z (thin face,   ~1 mm) → scene X (between cells, series axis)
+    const cardThickness = Math.min(this.cellGap * 0.7, 1.5)
+    const scaleX = modelSize.z > 0 ? cardThickness    / modelSize.z : 1  // GLTF Z → scene X
+    const scaleY = modelSize.y > 0 ? bodyH * 0.75     / modelSize.y : 1  // GLTF Y → scene Y (75% height, tucked inside)
+    const scaleZ = modelSize.x > 0 ? sizeZ            / modelSize.x : 1  // GLTF X → scene Z
+
+    const instancedMeshes = []
+    gltfMeshes.forEach(m => {
+      const srcGeom = m.geometry
+      const srcPos  = srcGeom.index
+        ? srcGeom.toNonIndexed().attributes.position
+        : srcGeom.attributes.position
+
+      const count  = srcPos.count
+      const posArr = new Float32Array(count * 3)
+      const wm     = m.matrixWorld
+
+      for (let i = 0; i < count; i++) {
+        const gx = srcPos.getX(i)
+        const gy = srcPos.getY(i)
+        const gz = srcPos.getZ(i)
+        const wx = wm.elements[0]*gx + wm.elements[4]*gy + wm.elements[8]*gz  + wm.elements[12]
+        const wy = wm.elements[1]*gx + wm.elements[5]*gy + wm.elements[9]*gz  + wm.elements[13]
+        const wz = wm.elements[2]*gx + wm.elements[6]*gy + wm.elements[10]*gz + wm.elements[14]
+        // axis swap + scale: GLTF(X,Y,Z) → scene(Z,Y,X)
+        posArr[i*3]   = (wz - modelCenter.z) * scaleX  // GLTF Z → scene X
+        posArr[i*3+1] = (wy - modelCenter.y) * scaleY  // GLTF Y → scene Y
+        posArr[i*3+2] = (wx - modelCenter.x) * scaleZ  // GLTF X → scene Z
+      }
+
+      const geom = new THREE.BufferGeometry()
+      geom.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+      geom.computeVertexNormals()
+
+      const srcMat = Array.isArray(m.material) ? m.material[0] : m.material
+      const mat    = srcMat.clone()
+      mat.metalness = 0.0
+      mat.roughness = 0.85
+
+      const im = new THREE.InstancedMesh(geom, mat, total)
+      im.name  = 'separator_card_gltf'
+      if (!this.isElectron) { im.castShadow = true; im.receiveShadow = true }
+      instancedMeshes.push(im)
+    })
+
+    let idx = 0
+    // Inner cards: between each adjacent series pair
+    for (let s = 0; s < S - 1; s++) {
+      const cardX = startX + s * stepX + stepX / 2
+      for (let p = 0; p < P; p++) {
+        const z    = startZ + p * stepZ
+        const mat4 = new THREE.Matrix4().makeTranslation(cardX, yCenter, z)
+        instancedMeshes.forEach(im => im.setMatrixAt(idx, mat4))
+        idx++
+      }
+    }
+    // Outer cards: between end plate and adjacent cell (±X)
+    for (const cardX of [arrayHalfX, -arrayHalfX]) {
+      for (let p = 0; p < P; p++) {
+        const z    = startZ + p * stepZ
+        const mat4 = new THREE.Matrix4().makeTranslation(cardX, yCenter, z)
+        instancedMeshes.forEach(im => im.setMatrixAt(idx, mat4))
+        idx++
+      }
+    }
+    instancedMeshes.forEach(im => { im.instanceMatrix.needsUpdate = true })
 
     const group = new THREE.Group()
-    group.name = 'side_plates'
+    group.name = 'separator_cards'
+    instancedMeshes.forEach(im => group.add(im))
 
-    // Side plates at Z extremes (clamp along Z axis)
-    const sideGeom = new THREE.BoxGeometry(arrayHalfX * 2, bodyH, 3)
-    const sideZ = arrayHalfZ + 1.5
-    const sPlus  = new THREE.Mesh(sideGeom, mat)
-    sPlus.position.set(0, yCenter,  sideZ)
-    const sMinus = new THREE.Mesh(sideGeom, mat)
-    sMinus.position.set(0, yCenter, -sideZ)
-    group.add(sPlus, sMinus)
+    this._addGroup('separator_cards', group)
+  }
 
-    // End plates at X extremes (thicker, clamp along X axis)
-    const endGeom = new THREE.BoxGeometry(5, bodyH, arrayHalfZ * 2 + 6)
-    const endX = arrayHalfX + 2.5
-    const ePlus  = new THREE.Mesh(endGeom, mat)
-    ePlus.position.set( endX, yCenter, 0)
-    const eMinus = new THREE.Mesh(endGeom, mat)
-    eMinus.position.set(-endX, yCenter, 0)
-    group.add(ePlus, eMinus)
+  _getGLTFWorldSize(gltf) {
+    const meshes = []
+    gltf.scene.updateMatrixWorld(true)
+    gltf.scene.traverse(obj => { if (obj.isMesh) meshes.push(obj) })
+    if (meshes.length === 0) return new THREE.Vector3()
+    const box = new THREE.Box3()
+    meshes.forEach(m => box.expandByObject(m))
+    const size = new THREE.Vector3()
+    box.getSize(size)
+    return size
+  }
 
-    this._addGroup('side_plates', group)
+  /**
+   * Shared helper: processes a GLTF scene into a centered, axis-swapped, scaled BufferGeometry.
+   * Pass null for any target dimension to keep that axis at natural (scale = 1).
+   *
+   * axisMode 'ZYX': GLTF world Z → scene X, GLTF world Y → scene Y, GLTF world X → scene Z
+   * axisMode 'XYZ': GLTF world X → scene X, GLTF world Y → scene Y, GLTF world Z → scene Z
+   */
+  _processPlateGLTFGeom(gltf, targetX, targetY, targetZ, axisMode) {
+    const gltfMeshes = []
+    gltf.scene.updateMatrixWorld(true)
+    gltf.scene.traverse(obj => { if (obj.isMesh) gltfMeshes.push(obj) })
+    if (gltfMeshes.length === 0) return null
+
+    const box = new THREE.Box3()
+    gltfMeshes.forEach(m => box.expandByObject(m))
+    const modelSize   = new THREE.Vector3()
+    const modelCenter = new THREE.Vector3()
+    box.getSize(modelSize)
+    box.getCenter(modelCenter)
+
+    let sX, sY, sZ
+    if (axisMode === 'ZYX') {
+      sX = (targetX != null && modelSize.z > 0) ? targetX / modelSize.z : 1
+      sY = (targetY != null && modelSize.y > 0) ? targetY / modelSize.y : 1
+      sZ = (targetZ != null && modelSize.x > 0) ? targetZ / modelSize.x : 1
+    } else {
+      sX = (targetX != null && modelSize.x > 0) ? targetX / modelSize.x : 1
+      sY = (targetY != null && modelSize.y > 0) ? targetY / modelSize.y : 1
+      sZ = (targetZ != null && modelSize.z > 0) ? targetZ / modelSize.z : 1
+    }
+
+    const subGeoms = []
+    gltfMeshes.forEach(m => {
+      const srcPos = m.geometry.index
+        ? m.geometry.toNonIndexed().attributes.position
+        : m.geometry.attributes.position
+      const count  = srcPos.count
+      const posArr = new Float32Array(count * 3)
+      const wm     = m.matrixWorld
+
+      for (let i = 0; i < count; i++) {
+        const gx = srcPos.getX(i)
+        const gy = srcPos.getY(i)
+        const gz = srcPos.getZ(i)
+        const wx = wm.elements[0]*gx + wm.elements[4]*gy + wm.elements[8]*gz  + wm.elements[12]
+        const wy = wm.elements[1]*gx + wm.elements[5]*gy + wm.elements[9]*gz  + wm.elements[13]
+        const wz = wm.elements[2]*gx + wm.elements[6]*gy + wm.elements[10]*gz + wm.elements[14]
+
+        if (axisMode === 'ZYX') {
+          posArr[i*3]   = (wz - modelCenter.z) * sX  // GLTF Z → scene X
+          posArr[i*3+1] = (wy - modelCenter.y) * sY  // GLTF Y → scene Y
+          posArr[i*3+2] = (wx - modelCenter.x) * sZ  // GLTF X → scene Z
+        } else {
+          posArr[i*3]   = (wx - modelCenter.x) * sX  // GLTF X → scene X
+          posArr[i*3+1] = (wy - modelCenter.y) * sY  // GLTF Y → scene Y
+          posArr[i*3+2] = (wz - modelCenter.z) * sZ  // GLTF Z → scene Z
+        }
+      }
+
+      const g = new THREE.BufferGeometry()
+      g.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+      g.computeVertexNormals()
+      subGeoms.push(g)
+    })
+
+    const merged = mergeGeometries(subGeoms, false)
+    subGeoms.forEach(g => g.dispose())
+    return merged
+  }
+
+  // ── End plates: two plates at ±X extremes clamping the series stack ──────────
+  // Plate face (GLTF XY plane, 175mm×118mm) faces ±X in scene.
+  // GLTF X (wide, 175mm) → scene Z (spans P parallel rows)
+  // GLTF Y (tall, 118mm) → scene Y (cell height)
+  // GLTF Z (thin, 12mm)  → scene X (plate thickness)
+  _buildPrismaticEndPlates(S, P, cell_used, housingH) {
+    const bodyH      = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
+    const sizeX      = cell_used.hauteur_mm
+    const sizeZ      = cell_used.largeur_mm
+    const stepX      = sizeX + this.cellGap
+    const stepZ      = sizeZ + this.cellGap
+    const arrayHalfX = (S * stepX - this.cellGap) / 2
+    const yCenter    = (-housingH / 2) + WALL_MM + bodyH / 2
+
+    const endThick = this.endPlateThick
+    const plateMat = new THREE.MeshStandardMaterial({
+      color: '#1a1a1a', metalness: 0.55, roughness: 0.5, side: THREE.DoubleSide,
+    })
+    const qFlipY   = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
+    const group    = new THREE.Group()
+    group.name     = 'end_plates'
+
+    const src  = this._endPlateGltf || this._sideSupportGltf
+    const geom = src
+      ? this._processPlateGLTFGeom(src, endThick, bodyH, P * stepZ, 'ZYX')
+      : (() => { const g = new THREE.BoxGeometry(endThick, bodyH, P * stepZ); return g })()
+
+    const ePos = new THREE.Mesh(geom, plateMat)
+    ePos.position.set(arrayHalfX + endThick / 2, yCenter, 0)
+    if (!this.isElectron) ePos.castShadow = true
+    group.add(ePos)
+
+    const eNeg = new THREE.Mesh(geom, plateMat)
+    eNeg.position.set(-(arrayHalfX + endThick / 2), yCenter, 0)
+    eNeg.quaternion.copy(qFlipY)
+    if (!this.isElectron) eNeg.castShadow = true
+    group.add(eNeg)
+
+    this._addGroup('end_plates', group)
+  }
+
+  // ── Side rails: one top bar per ±Z side linking the two end plates ───────────
+  // Simple rectangular rail sitting on top of the cell array, spanning end-to-end.
+  _buildPrismaticSideSupports(S, P, cell_used, housingH) {
+    const sizeX      = cell_used.hauteur_mm
+    const sizeZ      = cell_used.largeur_mm
+    const bodyH      = this._prismaticGltf ? cell_used.longueur_mm : cell_used.longueur_mm * 0.95
+    const stepX      = sizeX + this.cellGap
+    const stepZ      = sizeZ + this.cellGap
+    const arrayHalfZ = (P * stepZ - this.cellGap) / 2
+    const yFloor     = (-housingH / 2) + WALL_MM
+
+    const endThick   = this.endPlateThick
+    // Outer face of end plate = arrayHalfX + endThick = (S*stepX - cellGap)/2 + endThick
+    // Total span = S*stepX - cellGap + 2*endThick — exactly flush with both end plates
+    const railLength = S * stepX - this.cellGap + 2 * endThick
+    const railH      = 12   // bar height (mm)
+    const railThick  = 8    // fixed rail depth — independent of end plate thickness
+
+    const railMat = new THREE.MeshStandardMaterial({
+      color: '#1a1a1a', metalness: 0.55, roughness: 0.5,
+    })
+    const railGeom = new THREE.BoxGeometry(railLength, railH, railThick)
+
+    // Mid-height of the cell array — bar clamps cells from the sides
+    const railY = yFloor + bodyH / 2
+    const zPos  =  arrayHalfZ + railThick / 2
+    const zNeg  = -(arrayHalfZ + railThick / 2)
+
+    const group = new THREE.Group()
+    group.name  = 'side_supports'
+
+    for (const zSide of [zPos, zNeg]) {
+      const rail = new THREE.Mesh(railGeom, railMat)
+      rail.position.set(0, railY, zSide)
+      if (!this.isElectron) rail.castShadow = true
+      group.add(rail)
+    }
+
+    this._addGroup('side_supports', group)
   }
 
   _buildBMSBoard(S, P, cell_used, housingH, isCylindrical) {

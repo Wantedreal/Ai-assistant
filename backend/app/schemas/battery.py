@@ -2,7 +2,7 @@
 Battery schema models for API validation and responses
 """
 from enum import Enum
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Optional, List
 
 
@@ -50,17 +50,19 @@ class CellRead(BaseModel):
     type_cellule: str
     taux_swelling_pct: float
 
-    # Phase 1 extended fields (nullable)
-    fabricant:              Optional[str]   = None
-    chimie:                 Optional[str]   = None
-    cycle_life:             Optional[int]   = None
-    dod_reference_pct:      Optional[float] = None
-    c_rate_max_discharge:   Optional[float] = None
-    c_rate_max_charge:      Optional[float] = None
-    energie_volumique_wh_l: Optional[float] = None
-    eol_capacity_pct:       Optional[float] = None
-    energie_massique_wh_kg: Optional[float] = None
-    cutoff_voltage_v:       Optional[float] = None
+    # Extended fields (nullable)
+    fabricant:           Optional[str]   = None
+    chimie:              Optional[str]   = None
+    cycle_life:          Optional[int]   = None
+    dod_reference_pct:   Optional[float] = None
+    c_rate_max_discharge: Optional[float] = None
+    c_rate_max_charge:   Optional[float] = None
+    eol_capacity_pct:    Optional[float] = None
+    cutoff_voltage_v:    Optional[float] = None
+    temp_min_c:          Optional[float] = None
+    temp_max_c:          Optional[float] = None
+    temp_max_charge_c:   Optional[float] = None
+    v_charge_max:        Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -93,8 +95,20 @@ class CalculationRequest(BaseModel):
     # Mechanical spacing
     cell_gap_mm: float = Field(default=0.0, ge=0.0, description="Mechanical gap between adjacent cells in mm")
 
+    # Structural components
+    end_plate_thickness_mm: float = Field(default=10.0, ge=0.0, description="End plate thickness per side in mm (prismatic only)")
+
     # Phase 2 — lifetime estimate
     cycles_per_day: float = Field(default=1.0, gt=0, description="Expected full cycles per day (default 1)")
+
+    @model_validator(mode='after')
+    def check_manual_fields(self):
+        if self.config_mode == ConfigModeEnum.MANUAL:
+            if not self.manual_series or not self.manual_parallel:
+                raise ValueError(
+                    "manual_series and manual_parallel are required when config_mode is 'manual'"
+                )
+        return self
 
 
 class CalculationResult(BaseModel):
@@ -161,8 +175,9 @@ class RecommendRequest(BaseModel):
     housing_l_small:    float           = Field(..., gt=0)
     housing_h:          float           = Field(..., gt=0)
     marge_mm:           float           = Field(default=15.0, ge=0)
-    cell_gap_mm:        float           = Field(default=0.0, ge=0)
-    depth_of_discharge: float           = Field(default=80.0, ge=1.0, le=100.0)
+    cell_gap_mm:             float = Field(default=0.0, ge=0)
+    end_plate_thickness_mm:  float = Field(default=10.0, ge=0.0)
+    depth_of_discharge:      float = Field(default=80.0, ge=1.0, le=100.0)
     config_mode:        ConfigModeEnum  = Field(default=ConfigModeEnum.AUTO)
     manual_series:      Optional[int]   = Field(None, gt=0)
     manual_parallel:    Optional[int]   = Field(None, gt=0)
@@ -192,13 +207,27 @@ class ExplainRequest(BaseModel):
     cell_id:              int
     # Constraints
     energie_cible_wh:     Optional[float] = None
+    tension_cible_v:      Optional[float] = None
     courant_cible_a:      float
     depth_of_discharge:   float           = 80.0
     cycles_per_day:       float           = 1.0
+    # Housing
+    housing_l:            Optional[float] = None
+    housing_l_small:      Optional[float] = None
+    housing_h:            Optional[float] = None
     # Result summary (so the engine is not re-run)
     nb_serie:             int
     nb_parallele:         int
     verdict:              str
+    justification:        Optional[str]   = None
+    tension_totale_v:     Optional[float] = None
+    energie_reelle_wh:    Optional[float] = None
+    pack_l_mm:            Optional[float] = None
+    pack_w_mm:            Optional[float] = None
+    pack_h_mm:            Optional[float] = None
+    margin_l_mm:          Optional[float] = None
+    margin_w_mm:          Optional[float] = None
+    margin_h_mm:          Optional[float] = None
     lifetime_years:       Optional[float] = None
     c_rate_actual:        Optional[float] = None
     derating_factor_pct:  Optional[float] = None

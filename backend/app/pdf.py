@@ -77,9 +77,9 @@ def _arrow(d, x1, y1, x2, y2, color=_DIM_COLOR):
 def _pack_schematic(req, result, cell_info):
     """
     Build a proportional top-down 2D schematic of the pack.
-    Returns a ReportLab Drawing (Flowable).
     X axis (horizontal) = series direction L
     Y axis (vertical)   = parallel direction l
+    Scale is based on the larger of housing vs module so the drawing never overflows.
     """
     S   = result.nb_serie
     P   = result.nb_parallele
@@ -89,28 +89,48 @@ def _pack_schematic(req, result, cell_info):
     cell_type = (cell_info.type_cellule or 'Pouch').lower()
     if cell_type == 'cylindrical':
         diam  = cell_info.diameter_mm or cell_info.longueur_mm
-        cx_mm = diam
-        cz_mm = diam
+        cx_mm = cz_mm = diam
     else:
-        cx_mm = cell_info.hauteur_mm   # thin face → series axis X
-        cz_mm = cell_info.largeur_mm   # wide face → parallel axis Z
+        cx_mm = cell_info.hauteur_mm
+        cz_mm = cell_info.largeur_mm
 
-    hL = req.housing_l
-    hW = req.housing_l_small
+    hL    = req.housing_l
+    hW    = req.housing_l_small
+    arr_L = result.dimensions_raw.longueur_mm
+    arr_W = result.dimensions_raw.largeur_mm
 
-    # ── Scale to fit on page ─────────────────────────────────────────────
-    margin_pt = 28          # space around housing for dimension lines
-    max_w = 170 * mm - 2 * margin_pt
-    max_h = 85  * mm - 2 * margin_pt
-    scale = min(max_w / hL, max_h / hW)
+    # ── Margins (points) ────────────────────────────────────────────────
+    # Housing dims at bottom + right; module dims at top + left (no overlap possible)
+    left_margin   = 50   # module l_mod dim line + rotated label
+    right_margin  = 76   # housing l dim line + label
+    bottom_margin = 42   # housing L dim line + label
+    top_margin    = 34   # module L_mod dim line + label
 
-    hL_pt = hL * scale
-    hW_pt = hW * scale
-    draw_w = hL_pt + 2 * margin_pt
-    draw_h = hW_pt + 2 * margin_pt
+    avail_w = 170 * mm - left_margin - right_margin
+    avail_h =  92 * mm - bottom_margin - top_margin
 
-    ox = margin_pt   # housing left
-    oy = margin_pt   # housing bottom
+    # Scale on the UNION bounding box so overflow (REJECT) never clips
+    total_L = max(hL, arr_L)
+    total_W = max(hW, arr_W)
+    scale   = min(avail_w / total_L, avail_h / total_W)
+
+    hL_pt    = hL    * scale
+    hW_pt    = hW    * scale
+    arr_L_pt = arr_L * scale
+    arr_W_pt = arr_W * scale
+
+    scene_w = total_L * scale
+    scene_h = total_W * scale
+
+    # Housing centred inside the scene bounding box
+    ox    = left_margin + (scene_w - hL_pt)    / 2
+    oy    = bottom_margin + (scene_h - hW_pt)  / 2
+    # Array centred inside the scene bounding box (same centre as housing)
+    arr_ox = left_margin + (scene_w - arr_L_pt) / 2
+    arr_oy = bottom_margin + (scene_h - arr_W_pt) / 2
+
+    draw_w = scene_w + left_margin + right_margin
+    draw_h = scene_h + bottom_margin + top_margin
 
     d = Drawing(draw_w, draw_h)
 
@@ -119,80 +139,279 @@ def _pack_schematic(req, result, cell_info):
                fillColor=_HOUSING_FILL,
                strokeColor=_BLUE_MID, strokeWidth=1.5))
 
-    # ── Array bounding box (raw, no swelling) ────────────────────────────
-    arr_L = result.dimensions_raw.longueur_mm
-    arr_W = result.dimensions_raw.largeur_mm
-    arr_L_pt = arr_L * scale
-    arr_W_pt = arr_W * scale
-    arr_ox = ox + (hL_pt - arr_L_pt) / 2
-    arr_oy = oy + (hW_pt - arr_W_pt) / 2
-
+    # ── Cells ────────────────────────────────────────────────────────────
+    ep_pt = getattr(req, 'end_plate_thickness_mm', 0.0) * scale if cell_type != 'cylindrical' else 0.0
     step_x_pt = (cx_mm + gap) * scale
     step_z_pt = (cz_mm + gap) * scale
-
-    # Ensure the inter-cell gap is always visible in the schematic (min 1.5 pt when gap > 0)
     pad = max(gap * scale, 1.5) if gap > 0 else 0.5
-    cx_draw = step_x_pt - pad
-    cz_draw = step_z_pt - pad
-
+    cx_draw = max(step_x_pt - pad, 0.5)
+    cz_draw = max(step_z_pt - pad, 0.5)
     c1 = _BLUE_CELL  if ok else _RED_CELL
     c2 = _BLUE_CELL2 if ok else _RED_CELL2
+    cell_ox = arr_ox + ep_pt
 
     if S * P <= 400:
         for s in range(S):
             for p in range(P):
-                lx = arr_ox + s * step_x_pt + pad / 2
-                ly = arr_oy + p * step_z_pt + pad / 2
-                fill = c1 if s % 2 == 0 else c2
+                lx = cell_ox + s * step_x_pt + pad / 2
+                ly = arr_oy  + p * step_z_pt + pad / 2
                 d.add(Rect(lx, ly, cx_draw, cz_draw,
-                           fillColor=fill,
+                           fillColor=(c1 if s % 2 == 0 else c2),
                            strokeColor=colors.white, strokeWidth=0.3))
     else:
-        # Too many cells — draw array footprint only
         d.add(Rect(arr_ox, arr_oy, arr_L_pt, arr_W_pt,
                    fillColor=c1, strokeColor=colors.white, strokeWidth=1))
         d.add(String(arr_ox + arr_L_pt / 2, arr_oy + arr_W_pt / 2,
                      f'{S}×{P} cells', fontSize=8, textAnchor='middle',
                      fillColor=colors.white, fontName='Helvetica-Bold'))
 
-    # ── Dimension line — housing length (bottom) ─────────────────────────
-    dim_y = oy - 16
-    _arrow(d, ox, dim_y, ox + hL_pt, dim_y)
-    d.add(Line(ox,         oy, ox,         dim_y - 2, strokeColor=_DIM_COLOR, strokeWidth=0.4))
-    d.add(Line(ox + hL_pt, oy, ox + hL_pt, dim_y - 2, strokeColor=_DIM_COLOR, strokeWidth=0.4))
-    d.add(String((ox * 2 + hL_pt) / 2, dim_y + 3,
+    # End plates (prismatic)
+    if ep_pt > 0:
+        ep_color = colors.HexColor('#1a1a1a')
+        d.add(Rect(arr_ox,                    arr_oy, ep_pt, arr_W_pt, fillColor=ep_color, strokeColor=ep_color, strokeWidth=0))
+        d.add(Rect(arr_ox + arr_L_pt - ep_pt, arr_oy, ep_pt, arr_W_pt, fillColor=ep_color, strokeColor=ep_color, strokeWidth=0))
+
+    # Dashed red outline when module overflows housing (REJECT due to size)
+    if arr_L > hL or arr_W > hW:
+        d.add(Rect(arr_ox, arr_oy, arr_L_pt, arr_W_pt,
+                   fillColor=colors.transparent,
+                   strokeColor=_RED_CELL, strokeWidth=1.2,
+                   strokeDashArray=[5, 3]))
+
+    _BLU = colors.HexColor('#2563eb')
+    _AMB = colors.HexColor('#d97706')
+    right_edge   = left_margin + scene_w
+    top_of_scene = bottom_margin + scene_h
+
+    # ── Bottom: Housing L ────────────────────────────────────────────────
+    dim_y_h = bottom_margin - 16
+    _arrow(d, ox, dim_y_h, ox + hL_pt, dim_y_h)
+    d.add(Line(ox,         oy, ox,         dim_y_h + 2, strokeColor=_DIM_COLOR, strokeWidth=0.4))
+    d.add(Line(ox + hL_pt, oy, ox + hL_pt, dim_y_h + 2, strokeColor=_DIM_COLOR, strokeWidth=0.4))
+    d.add(String((ox * 2 + hL_pt) / 2, dim_y_h + 3,
                  f'L = {hL:.0f} mm', fontSize=7, textAnchor='middle',
                  fillColor=_DIM_COLOR, fontName='Helvetica'))
 
-    # ── Dimension line — housing width (left) ────────────────────────────
-    dim_x = ox - 18
-    _arrow(d, dim_x, oy, dim_x, oy + hW_pt)
-    d.add(Line(ox, oy,         dim_x - 2, oy,         strokeColor=_DIM_COLOR, strokeWidth=0.4))
-    d.add(Line(ox, oy + hW_pt, dim_x - 2, oy + hW_pt, strokeColor=_DIM_COLOR, strokeWidth=0.4))
-    d.add(String(dim_x - 3, (oy * 2 + hW_pt) / 2,
-                 f'l={hW:.0f}', fontSize=6, textAnchor='end',
+    # ── Top: Module L_mod ────────────────────────────────────────────────
+    dim_y_m = top_of_scene + 16
+    _arrow(d, arr_ox, dim_y_m, arr_ox + arr_L_pt, dim_y_m, color=_BLU)
+    d.add(Line(arr_ox,             arr_oy + arr_W_pt, arr_ox,             dim_y_m - 2, strokeColor=_BLU, strokeWidth=0.4))
+    d.add(Line(arr_ox + arr_L_pt, arr_oy + arr_W_pt, arr_ox + arr_L_pt, dim_y_m - 2, strokeColor=_BLU, strokeWidth=0.4))
+    d.add(String((arr_ox * 2 + arr_L_pt) / 2, dim_y_m + 3,
+                 f'L_mod = {arr_L:.0f} mm', fontSize=6.5, textAnchor='middle',
+                 fillColor=_BLU, fontName='Helvetica-Bold'))
+
+    # ── Right: Housing l ─────────────────────────────────────────────────
+    rx_h = right_edge + 14
+    _arrow(d, rx_h, oy, rx_h, oy + hW_pt)
+    d.add(Line(ox + hL_pt, oy,         rx_h - 2, oy,         strokeColor=_DIM_COLOR, strokeWidth=0.4))
+    d.add(Line(ox + hL_pt, oy + hW_pt, rx_h - 2, oy + hW_pt, strokeColor=_DIM_COLOR, strokeWidth=0.4))
+    d.add(String(rx_h + 3, (oy * 2 + hW_pt) / 2,
+                 f'l_h = {hW:.0f} mm', fontSize=7, textAnchor='start',
                  fillColor=_DIM_COLOR, fontName='Helvetica'))
 
-    # ── S / P axis labels ─────────────────────────────────────────────────
-    d.add(String(arr_ox + arr_L_pt / 2, arr_oy + arr_W_pt + 5,
-                 f'← S = {S} series →',
-                 fontSize=7, textAnchor='middle',
+    # ── Left: Module l_mod (rotated 90° CCW label) ───────────────────────
+    lx_m = left_margin - 18
+    _arrow(d, lx_m, arr_oy, lx_m, arr_oy + arr_W_pt, color=_BLU)
+    d.add(Line(arr_ox, arr_oy,            lx_m + 2, arr_oy,            strokeColor=_BLU, strokeWidth=0.4))
+    d.add(Line(arr_ox, arr_oy + arr_W_pt, lx_m + 2, arr_oy + arr_W_pt, strokeColor=_BLU, strokeWidth=0.4))
+    mid_m_y = (arr_oy * 2 + arr_W_pt) / 2
+    g = Group(String(0, 0, f'l_mod = {arr_W:.0f} mm', fontSize=6.5, textAnchor='middle',
+                     fillColor=_BLU, fontName='Helvetica-Bold'))
+    g.transform = (0, 1, -1, 0, lx_m - 7, mid_m_y)   # 90° CCW rotation + translate
+    d.add(g)
+
+    # ── Margin labels in gap zones ───────────────────────────────────────
+    marg_L = (hL - arr_L) / 2
+    marg_W = (hW - arr_W) / 2
+    gap_x_pt = (hL_pt - arr_L_pt) / 2
+    gap_z_pt = (hW_pt - arr_W_pt) / 2
+
+    def _delta_label(d, x, y, text):
+        """Amber margin label with white backing for readability."""
+        tw, th = 34, 9
+        d.add(Rect(x - tw/2, y - 1, tw, th, fillColor=colors.white,
+                   strokeColor=colors.transparent, strokeWidth=0))
+        d.add(String(x, y + 1, text, fontSize=7.5, textAnchor='middle',
+                     fillColor=_AMB, fontName='Helvetica-Bold'))
+
+    if abs(gap_x_pt) > 8:
+        mid_y = (oy * 2 + hW_pt) / 2
+        for lx in (ox + gap_x_pt / 2, ox + hL_pt - gap_x_pt / 2):
+            _delta_label(d, lx, mid_y, f'Δ{marg_L:.0f} mm')
+    if abs(gap_z_pt) > 8:
+        mid_x = arr_ox + arr_L_pt / 2
+        for ly in (oy + gap_z_pt / 2, oy + hW_pt - gap_z_pt / 2):
+            _delta_label(d, mid_x, ly, f'Δ{marg_W:.0f} mm')
+
+    # ── S / P axis labels (inside housing rect) ──────────────────────────
+    d.add(String(arr_ox + arr_L_pt / 2, arr_oy + arr_W_pt / 2 + 4,
+                 f'← S = {S} →', fontSize=7, textAnchor='middle',
                  fillColor=_BLUE_MID, fontName='Helvetica-Bold'))
-    # Vertical label approximation (stack chars isn't easy — use rotated approach)
-    # Instead, place it above-left
-    d.add(String(ox + 3, oy + hW_pt - 8,
-                 f'P={P}',
-                 fontSize=7, textAnchor='start',
+    d.add(String(arr_ox + 3, arr_oy + arr_W_pt / 2 - 8,
+                 f'P={P}', fontSize=7, textAnchor='start',
                  fillColor=_BLUE_MID, fontName='Helvetica-Bold'))
 
-    # ── Legend ────────────────────────────────────────────────────────────
-    leg_x = ox + hL_pt + 6
+    # ── Legend ───────────────────────────────────────────────────────────
+    leg_x = rx_h + 5
     leg_y = oy + hW_pt - 8
-    if leg_x + 40 < draw_w:  # only if space available
-        d.add(Rect(leg_x, leg_y,      8, 6, fillColor=_HOUSING_FILL, strokeColor=_BLUE_MID, strokeWidth=0.8))
-        d.add(String(leg_x + 10, leg_y + 1, 'Housing', fontSize=6, fillColor=_DIM_COLOR))
-        d.add(Rect(leg_x, leg_y - 10, 8, 6, fillColor=c1, strokeColor=colors.white, strokeWidth=0.3))
-        d.add(String(leg_x + 10, leg_y - 9, 'Cells', fontSize=6, fillColor=_DIM_COLOR))
+    d.add(Rect(leg_x, leg_y,      8, 6, fillColor=_HOUSING_FILL, strokeColor=_BLUE_MID, strokeWidth=0.8))
+    d.add(String(leg_x + 10, leg_y + 1, 'Housing', fontSize=6, fillColor=_DIM_COLOR))
+    d.add(Rect(leg_x, leg_y - 10, 8, 6, fillColor=c1, strokeColor=colors.white, strokeWidth=0.3))
+    d.add(String(leg_x + 10, leg_y - 9, 'Cells',   fontSize=6, fillColor=_DIM_COLOR))
+
+    return d
+
+
+# ─── Pack isometric view ──────────────────────────────────────────────────────
+def _pack_isometric(req, result):
+    """
+    Isometric projection of the pack housing with L / l / h dimension lines.
+    Returns a ReportLab Drawing (Flowable).
+    """
+    hL = req.housing_l          # series direction  (front edge)
+    hW = req.housing_l_small    # parallel direction (depth)
+    hH = req.housing_h          # height
+
+    arr_L = result.dimensions_raw.longueur_mm
+    arr_W = result.dimensions_raw.largeur_mm
+    arr_H = result.dimensions_raw.hauteur_mm
+
+    C30 = math.cos(math.radians(30))
+    S30 = math.sin(math.radians(30))
+
+    margin = 38       # space for one set of dimension lines per side (housing ↘, module ↖)
+    max_w  = 170 * mm - 2 * margin
+    max_h  =  80 * mm - 2 * margin
+
+    iso_w = (hL + hW) * C30        # projected bounding width
+    iso_h = (hL + hW) * S30 + hH   # projected bounding height
+    s = min(max_w / iso_w, max_h / iso_h)
+
+    def iso(x, z, y):
+        """3D pack coords → 2D isometric (unshifted)."""
+        return ((x - z) * C30 * s, (x + z) * S30 * s + y * s)
+
+    def iso_arr(x, z, y):
+        """Same projection scaled to array dims (centred inside housing)."""
+        ox_arr = (hL - arr_L) / 2
+        oz_arr = (hW - arr_W) / 2
+        oy_arr = (hH - arr_H) / 2
+        return iso(x + ox_arr, z + oz_arr, y + oy_arr)
+
+    # 8 corners of housing box (origin = bottom-front-left)
+    corners_raw = [
+        iso(0,   0,   0),   # A front-bottom-left
+        iso(hL,  0,   0),   # B front-bottom-right
+        iso(hL,  hW,  0),   # C back-bottom-right
+        iso(0,   hW,  0),   # D back-bottom-left
+        iso(0,   0,   hH),  # E front-top-left
+        iso(hL,  0,   hH),  # F front-top-right
+        iso(hL,  hW,  hH),  # G back-top-right
+        iso(0,   hW,  hH),  # H back-top-left
+    ]
+    # 8 corners of module array (centred inside housing)
+    module_raw = [
+        iso_arr(0,    0,    0),
+        iso_arr(arr_L,0,    0),
+        iso_arr(arr_L,arr_W,0),
+        iso_arr(0,    arr_W,0),
+        iso_arr(0,    0,    arr_H),
+        iso_arr(arr_L,0,    arr_H),
+        iso_arr(arr_L,arr_W,arr_H),
+        iso_arr(0,    arr_W,arr_H),
+    ]
+
+    all_pts = corners_raw + module_raw
+    min_x = min(p[0] for p in all_pts)
+    min_y = min(p[1] for p in all_pts)
+    max_x = max(p[0] for p in all_pts)
+    max_y = max(p[1] for p in all_pts)
+
+    draw_w = max_x - min_x + 2 * margin
+    draw_h = max_y - min_y + 2 * margin
+    ox = margin - min_x
+    oy = margin - min_y
+
+    def sh(p): return (p[0] + ox, p[1] + oy)
+
+    A, B, Cp, D, E, F, G, H = [sh(p) for p in corners_raw]
+    mA, mB, mC, mD, mE, mF, mG, mH = [sh(p) for p in module_raw]
+
+    d = Drawing(draw_w, draw_h)
+
+    # ── Housing faces (3 visible) ─────────────────────────────────────────
+    FACE_TOP   = colors.HexColor('#dbeafe')
+    FACE_FRONT = colors.HexColor('#eff6ff')
+    FACE_SIDE  = colors.HexColor('#bfdbfe')
+    EDGE       = _BLUE_MID
+
+    d.add(Polygon([H[0],H[1], G[0],G[1], F[0],F[1], E[0],E[1]],
+                  fillColor=FACE_TOP, strokeColor=EDGE, strokeWidth=0.8))
+    d.add(Polygon([B[0],B[1], Cp[0],Cp[1], G[0],G[1], F[0],F[1]],
+                  fillColor=FACE_SIDE, strokeColor=EDGE, strokeWidth=0.8))
+    d.add(Polygon([A[0],A[1], B[0],B[1], F[0],F[1], E[0],E[1]],
+                  fillColor=FACE_FRONT, strokeColor=EDGE, strokeWidth=0.8))
+
+    # ── Module array outline (front + right + top visible edges only) ─────
+    MOD_C = colors.HexColor('#2563eb')
+    MOD_W = 0.7
+    # front face edges
+    for p1, p2 in [(mA,mB), (mB,mF), (mF,mE), (mE,mA)]:
+        d.add(Line(p1[0],p1[1], p2[0],p2[1], strokeColor=MOD_C, strokeWidth=MOD_W, strokeDashArray=[2,2]))
+    # right face edges
+    for p1, p2 in [(mB,mC), (mC,mG), (mG,mF)]:
+        d.add(Line(p1[0],p1[1], p2[0],p2[1], strokeColor=MOD_C, strokeWidth=MOD_W, strokeDashArray=[2,2]))
+    # top face edges
+    for p1, p2 in [(mE,mH), (mH,mG)]:
+        d.add(Line(p1[0],p1[1], p2[0],p2[1], strokeColor=MOD_C, strokeWidth=MOD_W, strokeDashArray=[2,2]))
+
+    # ── Dimension helper ──────────────────────────────────────────────────
+    MOD_DIM_C = colors.HexColor('#2563eb')
+
+    def _dim_iso(p1, p2, label, side=1, offset=12, color=_DIM_COLOR):
+        """Dimension line between two 2D points with rotated arrowheads."""
+        dx = p2[0]-p1[0]; dy = p2[1]-p1[1]
+        length = math.hypot(dx, dy)
+        if length < 1: return
+        ux, uy = dx/length, dy/length
+        nx, ny = uy * side, -ux * side
+        p1o = (p1[0] + nx*offset, p1[1] + ny*offset)
+        p2o = (p2[0] + nx*offset, p2[1] + ny*offset)
+        # witness lines from edge to dim line
+        d.add(Line(p1[0], p1[1], p1o[0]+nx*2, p1o[1]+ny*2, strokeColor=color, strokeWidth=0.4))
+        d.add(Line(p2[0], p2[1], p2o[0]+nx*2, p2o[1]+ny*2, strokeColor=color, strokeWidth=0.4))
+        # main dim line
+        d.add(Line(p1o[0], p1o[1], p2o[0], p2o[1], strokeColor=color, strokeWidth=0.6))
+        # arrowheads
+        h = 3.5
+        px, py = -uy, ux
+        d.add(Polygon([p1o[0], p1o[1],
+                       p1o[0]+ux*h-px*(h/2), p1o[1]+uy*h-py*(h/2),
+                       p1o[0]+ux*h+px*(h/2), p1o[1]+uy*h+py*(h/2)],
+                      fillColor=color, strokeColor=color, strokeWidth=0))
+        d.add(Polygon([p2o[0], p2o[1],
+                       p2o[0]-ux*h-px*(h/2), p2o[1]-uy*h-py*(h/2),
+                       p2o[0]-ux*h+px*(h/2), p2o[1]-uy*h+py*(h/2)],
+                      fillColor=color, strokeColor=color, strokeWidth=0))
+        # label offset further outward
+        mx = (p1o[0]+p2o[0])/2 + nx*9
+        my = (p1o[1]+p2o[1])/2 + ny*9
+        d.add(String(mx, my, label, fontSize=6.5, textAnchor='middle',
+                     fillColor=color, fontName='Helvetica-Bold'))
+
+    # Housing dims — outward from bottom/right edges (side=1 → below/right of edge)
+    _dim_iso(A,  B,  f'L = {hL:.0f} mm',  side=1,  offset=14, color=_DIM_COLOR)
+    _dim_iso(B,  Cp, f'l = {hW:.0f} mm',  side=1,  offset=14, color=_DIM_COLOR)
+    _dim_iso(B,  F,  f'h = {hH:.0f} mm',  side=1,  offset=14, color=_DIM_COLOR)
+
+    # Module dims — placed on opposite exterior faces from housing dims
+    # L_mod: front TOP edge mE→mF, side=-1 (outward above top face)
+    _dim_iso(mE, mF, f'L_mod = {arr_L:.0f} mm', side=-1, offset=14, color=MOD_DIM_C)
+    # l_mod: right TOP depth edge mF→mG, side=+1 (outward upper-right from right face)
+    _dim_iso(mF, mG, f'l_mod = {arr_W:.0f} mm', side=1,  offset=14, color=MOD_DIM_C)
+    # h_mod: LEFT front vertical mA→mE, side=-1 (outward to the left)
+    _dim_iso(mA, mE, f'h_mod = {arr_H:.0f} mm', side=-1, offset=14, color=MOD_DIM_C)
 
     return d
 
@@ -296,6 +515,7 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
     is_ok       = (result.verdict.value == 'ACCEPT')
     cell_type   = (cell.type_cellule or 'Pouch').lower()
     gap         = getattr(req, 'cell_gap_mm', 0.0)
+    ep          = getattr(req, 'end_plate_thickness_mm', 10.0) if cell_type == 'prismatic' else 0.0
     swelling_raw = cell.taux_swelling_pct
     swelling_pct = swelling_raw if swelling_raw > 1.0 else swelling_raw * 100.0
     sw_factor    = 1.0 + swelling_pct / 100.0
@@ -341,6 +561,8 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
         ['Inter-cell gap',          'g',    f'{gap:.1f} mm'],
         ['Configuration mode',      '—',    mode_label],
     ]
+    if cell_type == 'prismatic':
+        input_rows.insert(-1, ['End plate thickness (per side)', 'e_p', f'{ep:.1f} mm'])
     if is_manual:
         input_rows.append(['Manual series (imposed)',   'S',  str(req.manual_series or S)])
         input_rows.append(['Manual parallel (imposed)', 'P',  str(req.manual_parallel or P)])
@@ -486,12 +708,13 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
         rel_L = 'L = S × d × (1 + τ) + (S−1) × g'
         rel_W = 'l = P × d × (1 + τ) + (P−1) × g'
     else:
-        an_L = (f'L = {S}×{cell.hauteur_mm:.1f}×(1+{swelling_pct:.1f}/100) + ({S}-1)×{gap:.1f}'
+        ep_term = f' + 2×{ep:.1f}' if ep > 0 else ''
+        an_L = (f'L = {S}×{cell.hauteur_mm:.1f}×(1+{swelling_pct:.1f}/100) + ({S}-1)×{gap:.1f}{ep_term}'
                 f' = {L_sw:.1f} mm')
         an_W = (f'l = {P}×{cell.largeur_mm:.1f}×(1+{swelling_pct:.1f}/100) + ({P}-1)×{gap:.1f}'
                 f' = {W_sw:.1f} mm')
         an_H = f'h = {cell.longueur_mm:.1f} mm  (cell height — no swelling on Y)'
-        rel_L = 'L = S × h_cell × (1 + τ) + (S−1) × g'
+        rel_L = 'L = S × h_cell × (1 + τ) + (S−1) × g + 2 × e_p' if ep > 0 else 'L = S × h_cell × (1 + τ) + (S−1) × g'
         rel_W = 'l = P × l_cell × (1 + τ) + (P−1) × g'
 
     story.extend(formula_block(rel_L, an_L, f'L_pack = {L_sw:.1f} mm'))
@@ -530,18 +753,29 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
     story.append(Spacer(1, 6*mm))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 4 — Pack Schematic
+    # SECTION 4 — Pack Schematics
     # ══════════════════════════════════════════════════════════════════════════
-    story.append(Paragraph('4. PACK SCHEMATIC — TOP VIEW', st['section']))
-    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph('4. PACK SCHEMATICS', st['section']))
+    story.append(Spacer(1, 2*mm))
 
+    story.append(Paragraph('4.1  Top view (X–Z plane)', st['subsection']))
     schematic = _pack_schematic(req, result, cell_info)
     story.append(schematic)
     story.append(Paragraph(
-        f'Top-down view (X–Z plane). '
-        f'Blue cells = even series columns (normal polarity). '
-        f'Dark blue = odd series columns (reversed). '
-        f'Housing outline in light blue. Array: {S} series × {P} parallel.',
+        f'Top-down view. L_housing / l_housing in gray; L_module / l_module in blue. '
+        f'Amber Δ = margin per face. '
+        f'Blue cells = even series columns, dark blue = odd columns (reversed polarity). '
+        f'Array: {S} series × {P} parallel.',
+        st['caption']))
+    story.append(Spacer(1, 4*mm))
+
+    story.append(Paragraph('4.2  Isometric view', st['subsection']))
+    iso_drawing = _pack_isometric(req, result)
+    story.append(iso_drawing)
+    story.append(Paragraph(
+        f'Isometric projection. Housing in light blue (3 visible faces). '
+        f'Dashed blue outline = module array. '
+        f'Gray dim lines = housing (L / l / h). Blue dim lines = module (L_mod / l_mod / h_mod).',
         st['caption']))
     story.append(Spacer(1, 6*mm))
 
@@ -622,62 +856,6 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
     story.append(t_margin)
     story.append(Spacer(1, 5*mm))
 
-    # ── BMS Specification ─────────────────────────────────────────────────────
-    if result.bms_v_min_pack is not None:
-        story.append(Paragraph('5.4  BMS specification', st['subsection']))
-
-        def _bms_fmt(v, unit='', d=1):
-            return f'{v:.{d}f} {unit}'.strip() if v is not None else '—'
-
-        charge_str = _bms_fmt(result.bms_i_charge_a, 'A')
-        if result.bms_i_charge_estimated:
-            charge_str += ' (est. — c_rate_max_charge not in dataset)'
-
-        discharge_cutoff = (f'{result.bms_discharge_cutoff_temp_c:.0f} °C'
-                            if result.bms_discharge_cutoff_temp_c is not None
-                            else '— (temp_min_c not in dataset)')
-
-        bms_rows = [
-            ['Parameter', 'Value', 'Source'],
-            ['Voltage window',
-             f'{result.bms_v_min_pack:.1f} V  →  {result.bms_v_max_pack:.1f} V',
-             'S × V_min/max (chemistry constants)'],
-            ['Continuous discharge current',
-             f'{result.bms_i_continuous_a:.1f} A',
-             'P × I_cell_max'],
-            ['Max charge current',
-             charge_str,
-             'P × c_rate_max_charge × C'],
-            ['Balance channels',
-             str(result.bms_balance_channels),
-             '= S'],
-            ['Balance current / channel',
-             f'{result.bms_balance_current_a:.3f} A',
-             'C × 2 % (standard floor)'],
-            ['Temperature sensors',
-             str(result.bms_temp_sensors),
-             '⌈ S×P / 12 ⌉'],
-            ['Charge cutoff temperature',
-             (f'{result.bms_charge_cutoff_temp_c} °C'
-              if result.bms_charge_cutoff_temp_c is not None else '—'),
-             'Chemistry constant'],
-            ['Discharge cutoff temperature',
-             discharge_cutoff,
-             'Cell temp_min_c'],
-            ['Suggested BMS family',
-             result.bms_suggestion or '—',
-             'Voltage + current lookup'],
-        ]
-        col_w_bms = [65*mm, 55*mm, 50*mm]
-        t_bms = Table(bms_rows, colWidths=col_w_bms)
-        t_bms.setStyle(_ts())
-        story.append(t_bms)
-        story.append(Paragraph(
-            'Note: values marked "est." use default assumptions — '
-            'verify against selected BMS datasheet before final design.',
-            st['note']))
-        story.append(Spacer(1, 5*mm))
-
     story.append(Spacer(1, 3*mm))
 
     # ── Verdict ───────────────────────────────────────────────────────────────
@@ -700,97 +878,6 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
 
     if result.justification:
         story.append(Paragraph(result.justification, st['normal']))
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 6 — Performance Estimate (Phase 2)
-    # ══════════════════════════════════════════════════════════════════════════
-    has_derating = result.c_rate_actual  is not None
-    has_lifetime = result.lifetime_years is not None
-
-    if has_derating or has_lifetime:
-        story.append(Spacer(1, 6*mm))
-        story.append(Paragraph('6. PERFORMANCE ESTIMATE', st['section']))
-        story.append(Paragraph(
-            'Engineering estimates based on chemistry-level models. '
-            'Verify against manufacturer discharge curves and cycle life data for final design.',
-            st['note']))
-        story.append(Spacer(1, 4*mm))
-
-        k_map  = {'NMC': 0.33, 'LFP': 0.10, 'NCA': 0.40, 'LTO': 0.04, 'LCO': 0.25}
-        exp_map = {'NMC': 1.5, 'LFP': 1.8, 'NCA': 1.3, 'LTO': 2.2, 'LCO': 1.5}
-        k    = k_map.get(cell.chimie, 0.20)
-        cpd  = getattr(req, 'cycles_per_day', 1.0) or 1.0
-
-        # ── 6.1 C-rate derating ───────────────────────────────────────────────
-        if has_derating:
-            story.append(Paragraph('6.1  C-rate derating', st['subsection']))
-            story.append(Paragraph(
-                'At high discharge rates, internal resistance losses reduce deliverable capacity. '
-                'The quadratic derating model (valid for C-rates between 20% and 80% of rated maximum):',
-                st['normal']))
-
-            I_cell = req.courant_cible_a / P
-            ratio  = result.c_rate_actual / cell.c_rate_max_discharge if cell.c_rate_max_discharge else 0
-
-            story.extend(formula_block(
-                'I_cell = I_target / P',
-                f'I_cell = {req.courant_cible_a:.1f} / {P} = {I_cell:.2f} A',
-                f'I_cell = {I_cell:.2f} A per cell'))
-
-            story.extend(formula_block(
-                'C_actual = I_cell / C_nominal',
-                f'C_actual = {I_cell:.2f} / {cell.capacite_ah:.2f} = {result.c_rate_actual:.3f} C',
-                f'C_actual = {result.c_rate_actual:.3f} C  '
-                f'{"(⚠ above 80% of C_max — estimate less reliable)" if result.c_rate_warning else "(within reliable range)"}'))
-
-            if result.derating_factor_pct == 0:
-                story.extend(formula_block(
-                    'derating_factor = 1 − k × (C_actual / C_max)²',
-                    f'ratio = {result.c_rate_actual:.3f} / {cell.c_rate_max_discharge:.1f} = {ratio:.3f}  <  0.20',
-                    'derating_factor = 0 %  (C-rate below 20% of maximum — negligible derating)',
-                    f'k = {k}  ({cell.chimie or "unknown"} chemistry estimate)'))
-            else:
-                story.extend(formula_block(
-                    'derating_factor = 1 − k × (C_actual / C_max)²',
-                    f'derating = {k} × ({result.c_rate_actual:.3f} / {cell.c_rate_max_discharge:.1f})²'
-                    f' = {k} × {ratio**2:.4f} = {abs(result.derating_factor_pct/100):.4f}',
-                    f'derating_factor = {result.derating_factor_pct:.1f} %',
-                    f'k = {k}  ({cell.chimie or "unknown"} chemistry estimate, PyBaMM-validated for NMC)'))
-
-                story.extend(formula_block(
-                    'C_effective = C_nominal × (1 + derating_factor/100)',
-                    f'C_effective = {cell.capacite_ah:.2f} × (1 − {abs(result.derating_factor_pct/100):.4f})',
-                    f'C_effective = {result.c_effective_ah:.3f} Ah per cell'))
-
-            story.append(Spacer(1, 3*mm))
-
-        # ── 6.2 Cycle life and lifetime ───────────────────────────────────────
-        if has_lifetime:
-            exp = exp_map.get(cell.chimie, 1.5)
-            story.append(Paragraph('6.2  Cycle life and pack lifetime', st['subsection']))
-            story.append(Paragraph(
-                'The Wöhler power law relates cycle life to depth of discharge. '
-                'Shallower cycling stress results in exponentially longer life:',
-                st['normal']))
-
-            dod_ratio = cell.dod_reference_pct / req.depth_of_discharge
-
-            story.extend(formula_block(
-                'N_dod = N_ref × (DoD_ref / DoD_operating) ^ α',
-                f'N_dod = {cell.cycle_life:,} × ({cell.dod_reference_pct:.0f} / {req.depth_of_discharge:.0f}) ^ {exp}'
-                f' = {cell.cycle_life:,} × {dod_ratio:.4f} ^ {exp}'
-                f' = {cell.cycle_life:,} × {dod_ratio**exp:.4f}',
-                f'N_dod = {result.cycle_life_at_dod:,} cycles at {req.depth_of_discharge:.0f}% DoD',
-                f'α = {exp}  ({cell.chimie or "unknown"} chemistry aging exponent, literature value)'))
-
-            story.extend(formula_block(
-                'Lifetime = N_dod / (cycles_per_day × 365)',
-                f'Lifetime = {result.cycle_life_at_dod:,} / ({cpd:.1f} × 365)'
-                f' = {result.cycle_life_at_dod:,} / {cpd*365:.0f}',
-                f'Lifetime = {result.lifetime_years:.1f} years at {cpd:.1f} cycle/day',
-                f'Uncertainty range: {result.lifetime_years_low:.1f} – {result.lifetime_years_high:.1f} years  (±30% on aging exponent)'))
-
-            story.append(Spacer(1, 3*mm))
 
     # ── Build ─────────────────────────────────────────────────────────────────
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)

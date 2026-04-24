@@ -8,7 +8,7 @@ import ExportPanel from './ExportPanel.jsx'
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI != null
 
-export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange, stepPayload = null }) {
+export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange, endPlateThickness = 10, onEndPlateChange, busbarThickness = 1, onBusbarHeightChange, stepPayload = null }) {
   const mountRef = useRef(null)
   const controlsRef = useRef(null)
   const cameraRef = useRef(null)
@@ -16,14 +16,28 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
   const cellGltfRef = useRef(null)
   const prismaticGltfRef = useRef(null)
   const prismaticBusbarGltfRef = useRef(null)
+  const separatorGltfRef = useRef(null)
+  const endPlateGltfRef = useRef(null)
+  const sideSupportGltfRef = useRef(null)
   const [cellGltfReady, setCellGltfReady] = useState(false)
   const [prismaticGltfReady, setPrismaticGltfReady] = useState(false)
   const [prismaticBusbarGltfReady, setPrismaticBusbarGltfReady] = useState(false)
+  const [separatorGltfReady, setSeparatorGltfReady] = useState(false)
+  const [endPlateGltfReady, setEndPlateGltfReady] = useState(false)
+  const [sideSupportGltfReady, setSideSupportGltfReady] = useState(false)
   const [webglError, setWebglError] = useState(null)
-  const [layers, setLayers] = useState({
-    housing: true, cells: true, terminals: true, busbars: true,
-    brackets: false, insulation_cards: false, side_plates: false,
-    bms: false, balance_wires: false, cables: false,
+  const [layers, setLayers] = useState(() => {
+    const t = (result?.cell_used?.type_cellule || '').toLowerCase()
+    const isCyl = t === 'cylindrical'
+    const hasPrism = !isCyl && t !== ''
+    return {
+      housing: true, cells: true, terminals: true, busbars: true,
+      brackets: isCyl,
+      separator_cards: hasPrism,
+      end_plates: hasPrism,
+      side_supports: hasPrism,
+      dimensions: true,
+    }
   })
 
   const hasValidResult = result?.cell_used && result?.dimensions_array && result.nb_serie > 0 && result.nb_parallele > 0
@@ -38,16 +52,34 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       (err) => { console.warn('Cell GLB load failed, using procedural fallback:', err) }
     )
     loader.load(
-      './meshes/PrismaticCell.glb',
+      './meshes/prismatic_cell.glb',
       (gltf) => { prismaticGltfRef.current = gltf; setPrismaticGltfReady(true) },
       undefined,
-      (err) => { console.warn('Prismatic GLB load failed, using procedural fallback:', err) }
+      (err) => { console.warn('Prismatic cell GLB load failed, using procedural fallback:', err) }
     )
     loader.load(
       './meshes/busbar_cylindrical.glb',
       (gltf) => { prismaticBusbarGltfRef.current = gltf; setPrismaticBusbarGltfReady(true) },
       undefined,
       (err) => { console.warn('Prismatic busbar GLB load failed, using procedural fallback:', err) }
+    )
+    loader.load(
+      './meshes/cell_separator.glb',
+      (gltf) => { separatorGltfRef.current = gltf; setSeparatorGltfReady(true) },
+      undefined,
+      (err) => { console.warn('Separator card GLB load failed, using procedural fallback:', err) }
+    )
+    loader.load(
+      './meshes/end_plate.glb',
+      (gltf) => { endPlateGltfRef.current = gltf; setEndPlateGltfReady(true) },
+      undefined,
+      (err) => { console.warn('End plate GLB load failed, using procedural fallback:', err) }
+    )
+    loader.load(
+      './meshes/side_plates.glb',
+      (gltf) => { sideSupportGltfRef.current = gltf; setSideSupportGltfReady(true) },
+      undefined,
+      (err) => { console.warn('Side plates GLB load failed, using procedural fallback:', err) }
     )
   }, [])
 
@@ -64,7 +96,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       scene.background = new THREE.Color('#1a1c23')
 
       // Camera
-      const camera = new THREE.PerspectiveCamera(45, width / height, 1, 10000)
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000)
       cameraRef.current = camera
 
       // Renderer
@@ -131,15 +163,20 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       // Assembly builder
       const builder = new PackAssemblyBuilder(scene, isElectron)
       builder.setCellGap(cellGap)
+      builder.setEndPlateThickness(endPlateThickness)
+      builder.setBusbarThickness(busbarThickness)
       if (cellGltfRef.current) builder.setCellModel(cellGltfRef.current)
       if (prismaticGltfRef.current) builder.setPrismaticModel(prismaticGltfRef.current)
       if (prismaticBusbarGltfRef.current) builder.setPrismaticBusbarModel(prismaticBusbarGltfRef.current)
+      if (separatorGltfRef.current) builder.setSeparatorModel(separatorGltfRef.current)
+      if (endPlateGltfRef.current) builder.setEndPlateModel(endPlateGltfRef.current)
+      if (sideSupportGltfRef.current) builder.setSideSupportModel(sideSupportGltfRef.current)
       builder.buildHousing(housingL, housingW, housingH, result?.verdict)
+      builder.buildDimensionAnnotations(housingL, housingW, housingH, result)
       builder.buildCells(housingH, result)
       builder.buildBusbars(housingH, result)
       builder.buildBracketsAndCards(housingH, result)
       builder.buildSidePlates(housingH, result)
-      builder.buildBMS(housingH, result)
 
       if (result?.is_rotated) {
         builder.applyRotation()
@@ -171,11 +208,20 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       }
       animate()
 
-      // Resize
+      // Resize — maintain apparent scene scale when canvas height changes
+      let prevResizeH = height
       const onResize = () => {
         if (!mountRef.current) return
         const w = mountRef.current.clientWidth
         const h = mountRef.current.clientHeight
+        if (w === 0 || h === 0) return
+        if (Math.abs(h - prevResizeH) > 1) {
+          const relPos = camera.position.clone().sub(controls.target)
+          relPos.multiplyScalar(prevResizeH / h)
+          camera.position.copy(controls.target).add(relPos)
+          controls.update()
+        }
+        prevResizeH = h
         renderer.setSize(w, h)
         camera.aspect = w / h
         camera.updateProjectionMatrix()
@@ -201,7 +247,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
         mountRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1c23;color:#999;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:10px">⚠️</div><div>3D Viewer unavailable</div><div style="font-size:12px;margin-top:8px;color:#666">${error.message}</div></div></div>`
       }
     }
-  }, [housingL, housingW, housingH, result, cellGap, cellGltfReady, prismaticGltfReady, prismaticBusbarGltfReady])
+  }, [housingL, housingW, housingH, result, cellGap, endPlateThickness, busbarThickness, cellGltfReady, prismaticGltfReady, prismaticBusbarGltfReady, separatorGltfReady, endPlateGltfReady, sideSupportGltfReady])
 
   // ─── Camera preset animation ────────────────────────────────────────────────
   useEffect(() => {
@@ -248,11 +294,26 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
     return () => { animating = false }
   }, [cameraPreset, housingL, housingW, housingH])
 
-  // ─── Auto-enable brackets for cylindrical cells ────────────────────────────
+  // ─── Auto-enable cell-type-specific layers ─────────────────────────────────
   useEffect(() => {
     const type = (result?.cell_used?.type_cellule || '').toLowerCase()
     const isCyl = type === 'cylindrical'
-    setLayers(prev => ({ ...prev, brackets: isCyl }))
+    const hasPrism = !isCyl && type !== ''
+    setLayers(prev => ({
+      ...prev,
+      brackets:        isCyl,
+      separator_cards: hasPrism,
+      end_plates:      hasPrism,
+      side_supports:   hasPrism,
+    }))
+    // Also apply directly to the builder — the scene setup effect runs before this
+    // effect and may have applied stale layer values on the first render after result arrives.
+    if (builderRef.current) {
+      builderRef.current.setLayerVisible('brackets',        isCyl)
+      builderRef.current.setLayerVisible('separator_cards', hasPrism)
+      builderRef.current.setLayerVisible('end_plates',      hasPrism)
+      builderRef.current.setLayerVisible('side_supports',   hasPrism)
+    }
   }, [result?.cell_used?.type_cellule])
 
   // ─── Layer sync ────────────────────────────────────────────────────────────
@@ -291,22 +352,27 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
           cellType={result?.cell_used?.type_cellule}
           cellGap={cellGap}
           onCellGapChange={onCellGapChange}
+          endPlateThickness={endPlateThickness}
+          onEndPlateChange={onEndPlateChange}
+          busbarHeight={busbarThickness}
+          onBusbarHeightChange={onBusbarHeightChange}
         />
       )}
 
       {/* Title */}
       <div style={{
-        position: 'absolute', top: 16, left: 16,
-        pointerEvents: 'none', color: '#fff',
-        textShadow: '0 2px 4px rgba(0,0,0,0.5)',
+        position: 'absolute', top: 0, left: 0, right: 0,
+        pointerEvents: 'none',
+        padding: '20px 16px 10px',
         fontFamily: 'var(--font-primary, sans-serif)',
+        fontSize: '0.68rem',
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        lineHeight: 1,
+        color: 'rgba(148,163,184,0.75)',
       }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.8 }}>
-          3D Pack visualization
-        </div>
-        <div style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: 4 }}>
-          {hasValidResult ? 'Housing vs Computed Array' : 'Target Housing Geometry'}
-        </div>
+        3D Pack Visualization
       </div>
 
       {/* Placeholder when no result */}

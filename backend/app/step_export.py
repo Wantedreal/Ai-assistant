@@ -75,6 +75,7 @@ def generate_step_file(
     S   = result.nb_serie
     P   = result.nb_parallele
     gap = req.cell_gap_mm
+    ep  = getattr(req, 'end_plate_thickness_mm', 10.0) or 0.0
     hL  = req.housing_l
     hW  = req.housing_l_small
     hH  = req.housing_h
@@ -109,8 +110,8 @@ def generate_step_file(
     else:
         _build_prismatic_cells(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, startZ, stepX, stepZ)
         _build_prismatic_busbars(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, startZ, stepX, stepZ)
-        _build_insulation_cards(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, stepX, stepZ)
-        _build_side_plates(asm, S, P, sizeX, sizeZ, bodyH, yCenter, stepX, stepZ, gap)
+        _build_insulation_cards(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, stepX, stepZ, gap)
+        _build_side_plates(asm, S, P, sizeX, sizeZ, bodyH, yCenter, stepX, stepZ, gap, ep)
 
     with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as f:
         path = f.name
@@ -287,15 +288,20 @@ def _build_prismatic_cells(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, star
     y_wrap = yCenter - 1
     y_cap  = yCenter + bodyH/2 - 1
     term_y = yCenter + bodyH/2
-    tr     = min(sizeX*0.32, sizeZ*0.12, 7)   # terminal radius
+    tr     = min(sizeX*0.32, sizeZ*0.12, 7)   # terminal radius (matches JS formula)
     po     =  sizeZ * TERM_OFFSET_RATIO        # positive Z offset
     no     = -sizeZ * TERM_OFFSET_RATIO        # negative Z offset
     sr     = min(2.5, tr*0.45)                 # stud radius
+    nr     = min(4.0, tr*0.65)                 # hex-nut radius (matches JS nutGeom)
+    qr_sz  = min(8.0, sizeX*0.6)              # label plate size (matches JS qrGeom)
 
-    wrap_locs = [_loc(startX+s*stepX, y_wrap, startZ+p*stepZ) for s in range(S) for p in range(P)]
-    cap_locs  = [_loc(startX+s*stepX, y_cap,  startZ+p*stepZ) for s in range(S) for p in range(P)]
-    _batch(_box(sizeX, wrap_h, sizeZ), wrap_locs, "cells", C_BLUE,  asm)
-    _batch(_box(sizeX, 2,      sizeZ), cap_locs,  "caps",  C_BLACK, asm)
+    wrap_locs = [_loc(startX+s*stepX, y_wrap,     startZ+p*stepZ) for s in range(S) for p in range(P)]
+    cap_locs  = [_loc(startX+s*stepX, y_cap,      startZ+p*stepZ) for s in range(S) for p in range(P)]
+    # Label plate sits centred on cap face between the two terminals (matches JS qrGeom at termY+0.5)
+    lbl_locs  = [_loc(startX+s*stepX, term_y+0.5, startZ+p*stepZ) for s in range(S) for p in range(P)]
+    _batch(_box(sizeX, wrap_h, sizeZ), wrap_locs, "cells",        C_BLUE,       asm)
+    _batch(_box(sizeX, 2,      sizeZ), cap_locs,  "caps",         C_BLACK,      asm)
+    _batch(_box(qr_sz, 1.0,    qr_sz), lbl_locs,  "label_plates", C_WHITE_TERM, asm)
 
     # Terminal locs — even columns: pos at +po, neg at +no
     #                  odd columns: pos at +no, neg at +po  (flipped polarity)
@@ -308,13 +314,17 @@ def _build_prismatic_cells(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, star
     ring = _cyl_y(1.5, tr*1.2)
     base = _cyl_y(2.5, tr)
     stud = _cyl_y(7.0, sr)
+    nut  = _cyl_y(1.5, nr)   # hex nut on stud (matches JS nutGeom at termY+4.55)
 
-    _batch(ring, tlocs(term_y+0.75, po, no), "pos_ring", C_WHITE_TERM, asm)
-    _batch(base, tlocs(term_y+1.25, po, no), "pos_base", C_STEEL,      asm)
-    _batch(stud, tlocs(term_y+6.0,  po, no), "pos_stud", C_STEEL,      asm)
-    _batch(ring, tlocs(term_y+0.75, no, po), "neg_ring", C_BLACK,      asm)
-    _batch(base, tlocs(term_y+1.25, no, po), "neg_base", C_STEEL,      asm)
-    _batch(stud, tlocs(term_y+6.0,  no, po), "neg_stud", C_STEEL,      asm)
+    # Y offsets match PackAssemblyBuilder.js exactly: +1.05 ring, +1.55 base, +6.3 stud, +4.55 nut
+    _batch(ring, tlocs(term_y+1.05, po, no), "pos_ring", C_WHITE_TERM, asm)
+    _batch(base, tlocs(term_y+1.55, po, no), "pos_base", C_STEEL,      asm)
+    _batch(stud, tlocs(term_y+6.3,  po, no), "pos_stud", C_STEEL,      asm)
+    _batch(nut,  tlocs(term_y+4.55, po, no), "pos_nut",  C_STEEL,      asm)
+    _batch(ring, tlocs(term_y+1.05, no, po), "neg_ring", C_BLACK,      asm)
+    _batch(base, tlocs(term_y+1.55, no, po), "neg_base", C_STEEL,      asm)
+    _batch(stud, tlocs(term_y+6.3,  no, po), "neg_stud", C_STEEL,      asm)
+    _batch(nut,  tlocs(term_y+4.55, no, po), "neg_nut",  C_STEEL,      asm)
 
 
 # ── Prismatic busbars (snake path) ────────────────────────────────────────────
@@ -323,7 +333,9 @@ def _build_prismatic_busbars(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, st
     po     =  sizeZ * TERM_OFFSET_RATIO
     no     = -sizeZ * TERM_OFFSET_RATIO
     tr     = min(sizeX*0.32, sizeZ*0.12, 7)
-    bar_y  = yCenter + bodyH/2 + 2.25 + 0.5
+    busbar_flat_h = 2.5  # matches PackAssemblyBuilder.js busbarFlatH
+    # Match JS: termYLocal = yCenter+bodyH/2+2, termBaseTop = +2.8, busbarY = +0.5+busbarFlatH/2
+    bar_y  = yCenter + bodyH/2 + 2 + 2.8 + 0.5 + busbar_flat_h / 2   # = yCenter+bodyH/2+6.55
     hbw    = tr*2 + 2    # bar width in Z
     hbx    = stepX + tr*2  # bar width in X
 
@@ -353,33 +365,41 @@ def _build_prismatic_busbars(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, st
             nz, pz = neg_z(*a), pos_z(*b)
             v_bars.append({"x": startX+a[0]*stepX, "z": (nz+pz)/2, "len": abs(nz-pz)})
 
-    h_bar = _box(hbx, 1.0, hbw)
+    h_bar = _box(hbx, busbar_flat_h, hbw)
     _batch(h_bar, h_locs, "h_bars", C_BUSBAR, asm)
 
     for i, b in enumerate(v_bars):
         blen = max(b["len"]+hbw, hbw)
-        asm.add(_box(hbw, 1.0, blen), name=f"vbar_{i}", color=C_BUSBAR, loc=_loc(b["x"], bar_y, b["z"]))
+        asm.add(_box(hbw, busbar_flat_h, blen), name=f"vbar_{i}", color=C_BUSBAR, loc=_loc(b["x"], bar_y, b["z"]))
 
 
 # ── Prismatic insulation cards ────────────────────────────────────────────────
 
-def _build_insulation_cards(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, stepX, stepZ):
-    if S < 2:
-        return
-    card  = _box(0.3, bodyH, P*stepZ)
-    locs  = [_loc(startX+s*stepX+stepX/2, yCenter, 0) for s in range(S-1)]
-    _batch(card, locs, "ins_cards", C_ORANGE, asm)
+def _build_insulation_cards(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, stepX, stepZ, gap):
+    card_h = bodyH * 0.75
+    card_w = P * sizeZ + (P - 1) * gap  # exact cell face width
+    card   = _box(0.3, card_h, card_w)
+    ahx    = (S * stepX - gap) / 2  # array half-X
+    # S-1 inner cards + 2 outer cards (at end-plate/cell interfaces) = S+1 total
+    inner = [_loc(startX + s*stepX + stepX/2, yCenter, 0) for s in range(S - 1)]
+    outer = [_loc(ahx, yCenter, 0), _loc(-ahx, yCenter, 0)]
+    _batch(card, inner + outer, "ins_cards", C_ORANGE, asm)
 
 
 # ── Prismatic side/end plates ─────────────────────────────────────────────────
 
-def _build_side_plates(asm, S, P, sizeX, sizeZ, bodyH, yCenter, stepX, stepZ, gap):
-    ahx = (S*stepX - gap) / 2
-    ahz = (P*stepZ - gap) / 2
-    side = _box(ahx*2, bodyH, 3)
-    _batch(side, [_loc(0, yCenter, ahz+1.5), _loc(0, yCenter, -ahz-1.5)], "side_plates", C_GRAY, asm)
-    end  = _box(5, bodyH, ahz*2+6)
-    _batch(end, [_loc(ahx+2.5, yCenter, 0), _loc(-ahx-2.5, yCenter, 0)], "end_plates", C_GRAY, asm)
+def _build_side_plates(asm, S, P, sizeX, sizeZ, bodyH, yCenter, stepX, stepZ, gap, ep=10.0):
+    ahx        = (S * stepX - gap) / 2
+    ahz        = (P * stepZ - gap) / 2
+    rail_thick = 8    # fixed side rail depth (mm) — matches PackAssemblyBuilder.js
+    rail_h     = 12   # fixed rail height (mm)
+    rail_len   = S * stepX - gap + 2 * ep  # spans full array including end plates
+    rail_y     = yCenter  # centred on array height
+    rail = _box(rail_len, rail_h, rail_thick)
+    _batch(rail, [_loc(0, rail_y, ahz + rail_thick/2), _loc(0, rail_y, -ahz - rail_thick/2)], "side_rails", C_GRAY, asm)
+    # End plates: ep thick, height = bodyH, Z span = array width
+    end = _box(ep, bodyH, ahz * 2)
+    _batch(end, [_loc(ahx + ep/2, yCenter, 0), _loc(-ahx - ep/2, yCenter, 0)], "end_plates", C_GRAY, asm)
 
 
 # ── BMS ───────────────────────────────────────────────────────────────────────

@@ -55,7 +55,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     # Explicitly exclude heavy libraries that are NOT used by the server
-    excludes=['pandas', 'openpyxl', 'numpy', 'matplotlib', 'tkinter',
+    excludes=['pandas', 'numpy', 'matplotlib', 'tkinter',
               'notebook', 'IPython', 'jupyter'],
     noarchive=False,
 )

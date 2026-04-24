@@ -133,10 +133,11 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
     else: # Pouch and Prismatic
         # Cells stand upright: Y = longueur_mm (tall), X = hauteur_mm (thin face), Z = largeur_mm (wide face)
         # Series stacks in X (thin face to thin face), parallel spreads in Z
-        L_raw = round(S * cell.hauteur_mm + (S - 1) * gap, 2)   # pack depth  (X axis)
-        W_raw = round(P * cell.largeur_mm  + (P - 1) * gap, 2)  # pack width  (Z axis)
-        H_raw = round(cell.longueur_mm, 2)                       # pack height (Y axis)
-        L_gonfles = round(S * cell.hauteur_mm * swelling_factor + (S - 1) * gap, 2)
+        ep = (getattr(req, 'end_plate_thickness_mm', 10.0) or 0.0) if cell_type == 'prismatic' else 0.0
+        L_raw = round(S * cell.hauteur_mm + (S - 1) * gap + 2 * ep, 2)   # X: cells + gaps + two end plates (prismatic only)
+        W_raw = round(P * cell.largeur_mm  + (P - 1) * gap, 2)
+        H_raw = round(cell.longueur_mm, 2)
+        L_gonfles = round(S * cell.hauteur_mm * swelling_factor + (S - 1) * gap + 2 * ep, 2)
         W_gonfles = round(P * cell.largeur_mm  * swelling_factor + (P - 1) * gap, 2)
         H_gonfles = round(cell.longueur_mm, 2)
     
@@ -178,11 +179,6 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
             violations.append(
                 f"Courant cible non atteint ({round(actual_current_a, 2)} A < {round(req.courant_cible_a, 2)} A)"
             )
-
-    if vol_housing > 0 and array_vol > vol_housing:
-        violations.append(
-            f"Volume réseau cellules dépasse le volume pack ({round(array_vol, 2)} mm³ > {round(vol_housing, 2)} mm³)"
-        )
 
     # ══════════════════════════════════════════════════════════════════════════
     # STEP 5 — Collision Detection & Margin par cote calculation
@@ -289,6 +285,7 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         courant_max_a=cell.courant_max_a,
         c_rate_max_charge=cell.c_rate_max_charge,
         temp_min_c=getattr(cell, 'temp_min_c', None),
+        v_charge_max=getattr(cell, 'v_charge_max', None),
     )
 
     # ══════════════════════════════════════════════════════════════════════════

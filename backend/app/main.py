@@ -426,22 +426,25 @@ def explain_result(
         capacite_ah=cell.capacite_ah,
         tension_nominale=cell.tension_nominale,
         courant_max_a=cell.courant_max_a,
-        cycle_life=cell.cycle_life,
-        dod_reference_pct=cell.dod_reference_pct,
-        c_rate_max_discharge=cell.c_rate_max_discharge,
-        temp_min_c=getattr(cell, 'temp_min_c', None),
-        temp_max_c=getattr(cell, 'temp_max_c', None),
         energie_cible_wh=req.energie_cible_wh,
+        tension_cible_v=req.tension_cible_v,
         courant_cible_a=req.courant_cible_a,
         depth_of_discharge=req.depth_of_discharge,
-        cycles_per_day=req.cycles_per_day,
+        housing_l=req.housing_l,
+        housing_l_small=req.housing_l_small,
+        housing_h=req.housing_h,
         nb_serie=req.nb_serie,
         nb_parallele=req.nb_parallele,
         verdict=req.verdict,
-        lifetime_years=req.lifetime_years,
-        c_rate_actual=req.c_rate_actual,
-        derating_factor_pct=req.derating_factor_pct,
-        c_rate_warning=req.c_rate_warning,
+        justification=req.justification,
+        tension_totale_v=req.tension_totale_v,
+        energie_reelle_wh=req.energie_reelle_wh,
+        pack_l_mm=req.pack_l_mm,
+        pack_w_mm=req.pack_w_mm,
+        pack_h_mm=req.pack_h_mm,
+        margin_l_mm=req.margin_l_mm,
+        margin_w_mm=req.margin_w_mm,
+        margin_h_mm=req.margin_h_mm,
     )
 
     try:
@@ -472,4 +475,4 @@ def read_root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
