@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react'
 import { apiService } from './services/api'
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js'
+import { LanguageProvider, useT } from './i18n'
 
 import Header from './components/Header'
-import { CellSelectorCard, AIFab } from './components/CellSelector'
+import { CellSelectorCard } from './components/CellSelector'
 import CellActionCard from './components/CellSelector'
 import ConstraintsForm from './components/ConstraintsForm'
 import PackViewer3DSkeleton from './components/PackViewer3DSkeleton'
 import ResultsPanel from './components/ResultsPanel'
+import ComparePanel from './components/ComparePanel'
+import HistoryPanel from './components/HistoryPanel'
+import CataloguePanel from './components/CataloguePanel'
+import AIFab from './components/AIFab'
 import { ErrorBoundary } from './components/ErrorBoundary'
 
 // Lazy load the 3D viewer component (contains heavy Three.js library)
@@ -28,6 +35,11 @@ const toOptNum = (v) => {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  return <LanguageProvider><AppInner /></LanguageProvider>
+}
+
+function AppInner() {
+  const t = useT()
   const [cells, setCells]             = useState([])
   const [selectedId, setSelectedId]   = useState(null)
   const [loading, setLoading]         = useState(true)
@@ -37,7 +49,11 @@ export default function App() {
   const [result, setResult]             = useState(null)
   const [lastPayload, setLastPayload]   = useState(null)
   const [fullscreenMode, setFullscreenMode] = useState(false)
-  const [cameraPreset, setCameraPreset] = useState('free')
+  const [cameraPreset, setCameraPreset]     = useState('free')
+  const [compareOpen, setCompareOpen]       = useState(false)
+  const [historyOpen, setHistoryOpen]       = useState(false)
+  const [historyCount, setHistoryCount]     = useState(0)
+  const [catalogueOpen, setCatalogueOpen]   = useState(false)
 
   // Form — keys match CalculationRequest exactly
   const [form, setForm] = useState({
@@ -65,6 +81,30 @@ export default function App() {
     setResult(null)
   }
 
+  const handleRestore = useCallback(({ payload, result: restoredResult, cellId }) => {
+    setSelectedId(cellId)
+    setResult(restoredResult)
+    setLastPayload(payload)
+    setForm(f => ({
+      ...f,
+      energie_cible_wh:        payload.energie_cible_wh   ?? f.energie_cible_wh,
+      tension_cible_v:         payload.tension_cible_v    ?? f.tension_cible_v,
+      courant_cible_a:         payload.courant_cible_a    ?? f.courant_cible_a,
+      housing_l:               payload.housing_l          ?? f.housing_l,
+      housing_l_small:         payload.housing_l_small    ?? f.housing_l_small,
+      housing_h:               payload.housing_h          ?? f.housing_h,
+      marge_mm:                payload.marge_mm           ?? f.marge_mm,
+      depth_of_discharge:      payload.depth_of_discharge ?? f.depth_of_discharge,
+      config_mode:             payload.config_mode        ?? f.config_mode,
+      cell_gap_mm:             payload.cell_gap_mm        ?? f.cell_gap_mm,
+      end_plate_thickness_mm:  payload.end_plate_thickness_mm ?? f.end_plate_thickness_mm,
+      cycles_per_day:          payload.cycles_per_day     ?? f.cycles_per_day,
+      manual_series:           payload.manual_series      ?? f.manual_series,
+      manual_parallel:         payload.manual_parallel    ?? f.manual_parallel,
+    }))
+    setCalcError(null)
+  }, [])
+
   const handleEnterFullscreen = () => {
     setFullscreenMode(true)
     setCameraPreset('isometric')
@@ -78,6 +118,62 @@ export default function App() {
   const handleCameraPreset = (preset) => {
     setCameraPreset(preset)
   }
+
+  // ── Export handlers (App-level so downloads survive fullscreen close) ──
+  const [exporting, setExporting] = useState(null) // 'glb' | 'stl' | 'step' | null
+  const builderRef = useRef(null)                   // shared ref to PackAssemblyBuilder
+
+  const triggerDownload = (blob, filename) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
+  }
+
+  const handleExportGLB = useCallback(() => {
+    if (!builderRef.current || exporting) return
+    setExporting('glb')
+    const group = builderRef.current.getExportGroup()
+    new GLTFExporter().parse(
+      group,
+      (result) => { triggerDownload(new Blob([result], { type: 'model/gltf-binary' }), 'battery_pack.glb'); setExporting(null) },
+      (err)    => { console.error('GLTFExporter:', err); setExporting(null) },
+      { binary: true }
+    )
+  }, [exporting])
+
+  const handleExportSTL = useCallback(() => {
+    if (!builderRef.current || exporting) return
+    setExporting('stl')
+    let flatGroup = null
+    try {
+      flatGroup = builderRef.current.getFlatGroupForSTL()
+      const result = new STLExporter().parse(flatGroup, { binary: true })
+      triggerDownload(new Blob([result], { type: 'application/octet-stream' }), 'battery_pack.stl')
+    } catch (err) {
+      console.error('STLExporter:', err)
+    } finally {
+      if (flatGroup) flatGroup.traverse(obj => { if (obj.geometry) obj.geometry.dispose() })
+      setExporting(null)
+    }
+  }, [exporting])
+
+  const handleExportSTEP = useCallback(async () => {
+    if (!lastPayload || exporting) return
+    setExporting('step')
+    try {
+      const { data } = await apiService.exportStep(lastPayload)
+      triggerDownload(new Blob([data], { type: 'application/step' }), 'battery_pack.step')
+    } catch (err) {
+      console.error('STEP export error:', err)
+    } finally {
+      setExporting(null)
+    }
+  }, [lastPayload, exporting])
 
   // ── Fetch cell catalogue (also called after import/sync) ──
   const loadCells = useCallback(async () => {
@@ -172,6 +268,7 @@ export default function App() {
       const { data } = await apiService.calculate(payload)
       setResult(data)
       setLastPayload(payload)
+      setHistoryCount(n => n + 1)
     } catch (e) {
       const detail = e?.response?.data?.detail
       setCalcError(
@@ -189,7 +286,7 @@ export default function App() {
     return (
       <div className="page-wrapper loading-screen">
         <div className="loading-icon">🔋</div>
-        <p className="loading-text">Loading cell catalogue…</p>
+        <p className="loading-text">{t('app.loading')}</p>
       </div>
     )
   }
@@ -198,12 +295,12 @@ export default function App() {
     return (
       <div className="page-wrapper error-screen">
         <div className="error-icon">⚠️</div>
-        <p className="error-text">{apiError}</p>
+        <p className="error-text">{t('app.error')}</p>
         <button
           className="modern-btn modern-btn-primary"
           onClick={() => window.location.reload()}
         >
-          Retry
+          {t('btn.retry')}
         </button>
       </div>
     )
@@ -213,7 +310,17 @@ export default function App() {
     <>
     <div className="page-wrapper" ref={wrapperRef}>
 
-      <Header />
+      <Header
+        onOpenCompare={() => setCompareOpen(true)}
+        onOpenHistory={() => setHistoryOpen(o => !o)}
+        onOpenCatalogue={() => setCatalogueOpen(true)}
+        historyCount={historyCount}
+      />
+      <HistoryPanel
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onRestore={handleRestore}
+      />
 
       <main className="page-content">
         <div className="bento-grid" id="bento-main">
@@ -274,8 +381,26 @@ export default function App() {
           {/* ── BOTTOM ROW — Results ── */}
           <ResultsPanel result={result} margeMm={form.marge_mm} />
 
+
         </div>
       </main>
+
+      {/* ── Export in-progress toast (shown when export runs after fullscreen closes) ── */}
+      {exporting && !fullscreenMode && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+          background: '#1a1c23', border: '1px solid #2a2c33',
+          borderRadius: 8, padding: '10px 16px',
+          color: '#cbd5e1', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 10,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        }}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}>
+            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+          </svg>
+          {exporting === 'step' ? 'Generating STEP file…' : `Exporting ${exporting.toUpperCase()}…`}
+        </div>
+      )}
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
 
       {/* ── Fullscreen 3D Viewer Modal ── */}
       {fullscreenMode && (
@@ -300,8 +425,8 @@ export default function App() {
             alignItems: 'center'
           }}>
             <div>
-              <h2 style={{ margin: '0 0 4px 0', color: '#fff', fontSize: '1.2rem' }}>3D Pack Visualization</h2>
-              <p style={{ margin: 0, color: '#999', fontSize: '0.85rem' }}>Click camera presets to change views</p>
+              <h2 style={{ margin: '0 0 4px 0', color: '#fff', fontSize: '1.2rem' }}>{t('pack3d.title')}</h2>
+              <p style={{ margin: 0, color: '#999', fontSize: '0.85rem' }}>{t('pack3d.fs_subtitle')}</p>
             </div>
             <button
               onClick={handleExitFullscreen}
@@ -332,16 +457,16 @@ export default function App() {
             flexWrap: 'wrap',
             alignItems: 'center'
           }}>
-            <span style={{ color: '#999', fontSize: '0.9rem', marginRight: '8px' }}>Camera:</span>
+            <span style={{ color: '#999', fontSize: '0.9rem', marginRight: '8px' }}>{t('pack3d.fs_camera')}</span>
             {[
-              { label: 'Front', value: 'front' },
-              { label: 'Back', value: 'back' },
-              { label: 'Top', value: 'top' },
-              { label: 'Bottom', value: 'bottom' },
-              { label: 'Left', value: 'left' },
-              { label: 'Right', value: 'right' },
-              { label: 'Isometric', value: 'isometric' },
-              { label: 'Free Orbit', value: 'free' }
+              { labelKey: 'pack3d.cam.front',     value: 'front' },
+              { labelKey: 'pack3d.cam.back',      value: 'back' },
+              { labelKey: 'pack3d.cam.top',       value: 'top' },
+              { labelKey: 'pack3d.cam.bottom',    value: 'bottom' },
+              { labelKey: 'pack3d.cam.left',      value: 'left' },
+              { labelKey: 'pack3d.cam.right',     value: 'right' },
+              { labelKey: 'pack3d.cam.isometric', value: 'isometric' },
+              { labelKey: 'pack3d.cam.free',      value: 'free' },
             ].map(preset => (
               <button
                 key={preset.value}
@@ -359,7 +484,7 @@ export default function App() {
                   hover: { backgroundColor: '#3a3c43' }
                 }}
               >
-                {preset.label}
+                {t(preset.labelKey)}
               </button>
             ))}
           </div>
@@ -382,6 +507,11 @@ export default function App() {
                   busbarThickness={toNum(form.busbar_thickness_mm, 1)}
                   onBusbarHeightChange={v => handleFieldChange('busbar_thickness_mm', v)}
                   stepPayload={lastPayload}
+                  externalBuilderRef={builderRef}
+                  onExportGLB={handleExportGLB}
+                  onExportSTL={handleExportSTL}
+                  onExportSTEP={handleExportSTEP}
+                  exporting={exporting}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -408,7 +538,7 @@ export default function App() {
                 fontWeight: 600
               }}
             >
-              Return to Layout
+              {t('pack3d.fs_return')}
             </button>
           </div>
         </div>
@@ -417,7 +547,23 @@ export default function App() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
 
-    <AIFab result={result} cell={cell} form={form} />
+    <AIFab cell={cell} form={form} result={result} />
+
+    {compareOpen && (
+      <ComparePanel
+        cells={cells}
+        onClose={() => setCompareOpen(false)}
+      />
+    )}
+
+    {catalogueOpen && (
+      <CataloguePanel
+        cells={cells}
+        onClose={() => setCatalogueOpen(false)}
+        onSelectCell={(id) => { handleSelectCell(id); setCatalogueOpen(false) }}
+        onReloadCells={loadCells}
+      />
+    )}
     </>
   )
 }

@@ -14,6 +14,9 @@ Run:
     uvicorn app.main:app --reload --port 8000
 """
 
+import json
+import logging
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
@@ -24,16 +27,19 @@ from typing import List, Optional
 
 from app.db.database import engine, get_db, init_db
 from app.models.cellule import Cellule
+from app.models.history import CalculationHistory
 from app.schemas.battery import (
     CalculationRequest, CalculationResult, CellRead,
     RecommendRequest, RecommendResult, CellMatch,
     ExplainRequest, ExplainResponse,
+    HistoryEntry, HistoryListResponse,
+    CellCreate, CellAddResponse,
 )
 from app.core.engine import run_engine
 from app.core.recommender import recommend_cells
 from app.pdf import generate_pdf_report
 from app.step_export import generate_step_file
-from app.importer import import_from_bytes, import_from_path, get_source_path, save_source_path
+from app.importer import import_from_bytes, import_from_path, get_source_path, save_source_path, append_to_source_excel
 from app.explainer import build_user_prompt, explain as ai_explain
 
 # ── Create tables on startup (idempotent — safe to call multiple times) ───────
@@ -195,6 +201,28 @@ def calculate_pack(
         result = run_engine(req, cell)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+    # Auto-save to history
+    try:
+        entry = CalculationHistory(
+            timestamp=datetime.utcnow(),
+            cell_id=cell.id,
+            cell_nom=cell.nom,
+            cell_type=cell.type_cellule,
+            nb_serie=result.nb_serie,
+            nb_parallele=result.nb_parallele,
+            verdict=result.verdict.value,
+            fill_pct=result.taux_occupation_pct,
+            energy_wh=result.energie_reelle_wh,
+            lifetime_yr=result.lifetime_years,
+            payload_json=req.model_dump_json(),
+            result_json=result.model_dump_json(),
+        )
+        db.add(entry)
+        db.commit()
+    except Exception:
+        db.rollback()  # never block the response if history save fails
+
     return result
 
 
@@ -237,7 +265,7 @@ def generate_report_pdf(
         raise HTTPException(status_code=422, detail=str(exc))
 
     # Generate PDF in memory
-    pdf_buffer = generate_pdf_report(req, result, cell)
+    pdf_buffer = generate_pdf_report(req, result, cell, lang=req.lang)
     
     # Return as downloadable PDF
     return StreamingResponse(
@@ -287,6 +315,66 @@ def export_step(
         media_type="application/step",
         headers={"Content-Disposition": "attachment; filename=battery_pack.step"}
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ADD CELL
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post(
+    "/api/v1/cells",
+    response_model=CellAddResponse,
+    tags=["Catalogue"],
+    summary="Add a new cell to the catalogue and to the source Excel file",
+    status_code=201,
+)
+def add_cell(req: CellCreate, db: Session = Depends(get_db)):
+    """
+    Inserts a new cell into SQLite and, if a source Excel path is configured,
+    appends the row to that file so future Sync calls include it.
+    """
+    cell = Cellule(
+        nom=req.nom,
+        type_cellule=req.type_cellule,
+        tension_nominale=req.tension_nominale,
+        capacite_ah=req.capacite_ah,
+        courant_max_a=req.courant_max_a,
+        longueur_mm=req.longueur_mm,
+        largeur_mm=req.largeur_mm,
+        hauteur_mm=req.hauteur_mm,
+        masse_g=req.masse_g,
+        taux_swelling_pct=req.taux_swelling_pct,
+        diameter_mm=req.diameter_mm,
+        fabricant=req.fabricant,
+        chimie=req.chimie,
+        cycle_life=req.cycle_life,
+        dod_reference_pct=req.dod_reference_pct,
+        c_rate_max_discharge=req.c_rate_max_discharge,
+        c_rate_max_charge=req.c_rate_max_charge,
+        eol_capacity_pct=req.eol_capacity_pct,
+        cutoff_voltage_v=req.cutoff_voltage_v,
+        temp_min_c=req.temp_min_c,
+        temp_max_c=req.temp_max_c,
+        temp_max_charge_c=req.temp_max_charge_c,
+        v_charge_max=req.v_charge_max,
+    )
+    db.add(cell)
+    db.commit()
+    db.refresh(cell)
+
+    # Append to the Excel source file (best-effort — never blocks the 201)
+    excel_updated = False
+    excel_warning: str | None = None
+    try:
+        excel_updated = append_to_source_excel(req.model_dump())
+        if not excel_updated:
+            excel_warning = "No source Excel configured — cell saved to DB only. Use Import to link an Excel file."
+    except Exception as exc:
+        logging.warning("Excel append failed for cell '%s': %s", req.nom, exc)
+        excel_warning = f"Excel update failed: {exc}"
+
+    response = CellAddResponse.model_validate(cell)
+    return response.model_copy(update={"excel_updated": excel_updated, "excel_warning": excel_warning})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -397,6 +485,37 @@ def get_import_config():
     return {"source_path": get_source_path()}
 
 
+@app.post(
+    "/api/v1/cells/import/config",
+    tags=["Catalogue"],
+    summary="Manually save the source Excel file path",
+)
+def set_import_config(body: dict):
+    """Saves the given path as the source .xlsx for future Sync and Excel-append calls."""
+    path = body.get("source_path", "").strip()
+    if not path:
+        raise HTTPException(status_code=422, detail="source_path is required")
+    if not Path(path).exists():
+        raise HTTPException(status_code=422, detail=f"File not found: {path}")
+    if not path.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=422, detail="File must be an .xlsx file")
+    save_source_path(path)
+    return {"source_path": path}
+
+
+@app.delete(
+    "/api/v1/cells/import/config",
+    tags=["Catalogue"],
+    summary="Clear the saved source Excel file path",
+)
+def clear_import_config():
+    """Removes the saved source path so a new file can be configured."""
+    from app.importer import CONFIG_PATH
+    if CONFIG_PATH.exists():
+        CONFIG_PATH.unlink()
+    return {"source_path": None}
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # AI EXPLAINER
 # ══════════════════════════════════════════════════════════════════════════════
@@ -448,7 +567,7 @@ def explain_result(
     )
 
     try:
-        text = ai_explain(prompt_text)
+        text = ai_explain(prompt_text, lang=req.lang)
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except RuntimeError as exc:
@@ -457,6 +576,69 @@ def explain_result(
         raise HTTPException(status_code=502, detail=f"AI service error: {exc}")
 
     return ExplainResponse(explanation=text)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CALCULATION HISTORY
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get(
+    "/api/v1/history",
+    response_model=HistoryListResponse,
+    tags=["History"],
+    summary="Get calculation history (most recent first)",
+)
+def get_history(limit: int = 50, db: Session = Depends(get_db)):
+    entries = (
+        db.query(CalculationHistory)
+        .order_by(CalculationHistory.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+    return HistoryListResponse(entries=[
+        HistoryEntry(
+            id=e.id,
+            timestamp=e.timestamp.isoformat(),
+            cell_id=e.cell_id,
+            cell_nom=e.cell_nom,
+            cell_type=e.cell_type,
+            nb_serie=e.nb_serie,
+            nb_parallele=e.nb_parallele,
+            verdict=e.verdict,
+            fill_pct=e.fill_pct,
+            energy_wh=e.energy_wh,
+            lifetime_yr=e.lifetime_yr,
+            payload_json=e.payload_json,
+            result_json=e.result_json,
+        )
+        for e in entries
+    ])
+
+
+@app.delete(
+    "/api/v1/history/{entry_id}",
+    tags=["History"],
+    summary="Delete a single history entry",
+)
+def delete_history_entry(entry_id: int, db: Session = Depends(get_db)):
+    entry = db.query(CalculationHistory).filter(CalculationHistory.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"History entry {entry_id} not found.")
+    db.delete(entry)
+    db.commit()
+    return {"deleted": entry_id}
+
+
+@app.delete(
+    "/api/v1/history",
+    tags=["History"],
+    summary="Clear all calculation history",
+)
+def clear_history(db: Session = Depends(get_db)):
+    count = db.query(CalculationHistory).count()
+    db.query(CalculationHistory).delete()
+    db.commit()
+    return {"deleted": count}
 
 
 # ── Root and fallback endpoints ───────────────────────────────────────────────

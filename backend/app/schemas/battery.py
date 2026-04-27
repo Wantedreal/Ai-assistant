@@ -101,6 +101,9 @@ class CalculationRequest(BaseModel):
     # Phase 2 — lifetime estimate
     cycles_per_day: float = Field(default=1.0, gt=0, description="Expected full cycles per day (default 1)")
 
+    # Report language
+    lang: str = Field(default="en", description="Report language: 'en' or 'fr'")
+
     @model_validator(mode='after')
     def check_manual_fields(self):
         if self.config_mode == ConfigModeEnum.MANUAL:
@@ -232,7 +235,70 @@ class ExplainRequest(BaseModel):
     c_rate_actual:        Optional[float] = None
     derating_factor_pct:  Optional[float] = None
     c_rate_warning:       Optional[bool]  = None
+    lang:                 str             = "en"
 
 
 class ExplainResponse(BaseModel):
     explanation: str
+
+
+# ── Phase B — Calculation History ────────────────────────────────────────────
+
+class HistoryEntry(BaseModel):
+    id:          int
+    timestamp:   str
+    cell_id:     int
+    cell_nom:    str
+    cell_type:   Optional[str]   = None
+    nb_serie:    int
+    nb_parallele: int
+    verdict:     str
+    fill_pct:    Optional[float] = None
+    energy_wh:   Optional[float] = None
+    lifetime_yr: Optional[float] = None
+    payload_json: str
+    result_json:  str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HistoryListResponse(BaseModel):
+    entries: List[HistoryEntry]
+
+
+
+# ── Phase 3 (roadmap) — Add Cell ─────────────────────────────────────────────
+
+class CellCreate(BaseModel):
+    # Required
+    nom:               str
+    type_cellule:      str
+    tension_nominale:  float
+    capacite_ah:       float
+    courant_max_a:     float
+    longueur_mm:       float
+    largeur_mm:        float
+    hauteur_mm:        float
+    masse_g:           float
+    taux_swelling_pct: float = 8.0
+
+    # Optional
+    diameter_mm:          Optional[float] = None
+    fabricant:            Optional[str]   = None
+    chimie:               Optional[str]   = None
+    cycle_life:           Optional[int]   = None
+    dod_reference_pct:    Optional[float] = None
+    c_rate_max_discharge: Optional[float] = None
+    c_rate_max_charge:    Optional[float] = None
+    eol_capacity_pct:     Optional[float] = None
+    cutoff_voltage_v:     Optional[float] = None
+    temp_min_c:           Optional[float] = None
+    temp_max_c:           Optional[float] = None
+    temp_max_charge_c:    Optional[float] = None
+    v_charge_max:         Optional[float] = None
+
+
+class CellAddResponse(CellRead):
+    """Response for POST /cells — extends CellRead with Excel-sync status."""
+    excel_updated: bool = True
+    excel_warning: Optional[str] = None

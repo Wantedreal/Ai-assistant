@@ -1,28 +1,29 @@
 import React from 'react'
+import { useT } from '../i18n'
 
 const LAYER_GROUPS = [
   {
-    category: 'STRUCTURE',
+    categoryKey: 'layer.cat.structure',
     items: [
-      { name: 'housing',       label: 'Housing',        types: ['cylindrical', 'prismatic', 'pouch'] },
-      { name: 'dimensions',    label: 'Dimensions L/l/h', types: ['cylindrical', 'prismatic', 'pouch'] },
-      { name: 'end_plates',    label: 'End Plates',     types: ['prismatic', 'pouch'] },
-      { name: 'side_supports', label: 'Side Supports',  types: ['prismatic', 'pouch'] },
-      { name: 'brackets',      label: 'Cell Brackets',  types: ['cylindrical'] },
+      { name: 'housing',       labelKey: 'layer.housing',       types: ['cylindrical', 'prismatic', 'pouch'] },
+      { name: 'dimensions',    labelKey: 'layer.dimensions',    types: ['cylindrical', 'prismatic', 'pouch'] },
+      { name: 'end_plates',    labelKey: 'layer.end_plates',    types: ['prismatic', 'pouch'] },
+      { name: 'side_supports', labelKey: 'layer.side_supports', types: ['prismatic', 'pouch'] },
+      { name: 'brackets',      labelKey: 'layer.brackets',      types: ['cylindrical'] },
     ],
   },
   {
-    category: 'ELECTRICAL',
+    categoryKey: 'layer.cat.electrical',
     items: [
-      { name: 'cells',     label: 'Cells',            types: ['cylindrical', 'prismatic', 'pouch'] },
-      { name: 'terminals', label: 'Terminals (+/−)',  types: ['cylindrical', 'prismatic', 'pouch'] },
-      { name: 'busbars',   label: 'Busbars / Strips', types: ['cylindrical', 'prismatic', 'pouch'] },
+      { name: 'cells',     labelKey: 'layer.cells',     types: ['cylindrical', 'prismatic', 'pouch'] },
+      { name: 'terminals', labelKey: 'layer.terminals', types: ['cylindrical', 'prismatic', 'pouch'] },
+      { name: 'busbars',   labelKey: 'layer.busbars',   types: ['cylindrical', 'prismatic', 'pouch'] },
     ],
   },
   {
-    category: 'INSULATION',
+    categoryKey: 'layer.cat.insulation',
     items: [
-      { name: 'separator_cards', label: 'Separator Cards', types: ['prismatic', 'pouch'] },
+      { name: 'separator_cards', labelKey: 'layer.separator_cards', types: ['prismatic', 'pouch'] },
     ],
   },
 ]
@@ -39,6 +40,7 @@ const sectionLabel = {
 }
 
 export default function LayerControlPanel({ layers, onToggle, cellType, cellGap, onCellGapChange, endPlateThickness, onEndPlateChange, busbarHeight, onBusbarHeightChange }) {
+  const t = useT()
   const type = (cellType || '').toLowerCase()
   const allNames = Object.keys(layers)
   const isPrismatic = type !== 'cylindrical'
@@ -68,19 +70,19 @@ export default function LayerControlPanel({ layers, onToggle, cellType, cellGap,
           fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
           marginBottom: 10, opacity: 0.7, fontSize: '0.7rem',
         }}>
-          Layers
+          {t('layer.title')}
         </div>
 
         {LAYER_GROUPS.map(group => {
           const visibleItems = group.items.filter(i => i.types.includes(type))
           if (visibleItems.length === 0) return null
           return (
-            <div key={group.category} style={{ marginBottom: 8 }}>
+            <div key={group.categoryKey} style={{ marginBottom: 8 }}>
               <div style={{
                 fontSize: '0.62rem', color: '#475569',
                 textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4,
               }}>
-                {group.category}
+                {t(group.categoryKey)}
               </div>
               {visibleItems.map(item => {
                 const checked = layers[item.name] !== false
@@ -95,7 +97,7 @@ export default function LayerControlPanel({ layers, onToggle, cellType, cellGap,
                       onChange={e => onToggle(item.name, e.target.checked)}
                       style={{ accentColor: '#3b82f6', cursor: 'pointer', width: 13, height: 13 }}
                     />
-                    <span style={{ opacity: checked ? 1 : 0.45 }}>{item.label}</span>
+                    <span style={{ opacity: checked ? 1 : 0.45 }}>{t(item.labelKey)}</span>
                   </label>
                 )
               })}
@@ -107,8 +109,8 @@ export default function LayerControlPanel({ layers, onToggle, cellType, cellGap,
           display: 'flex', gap: 6, marginTop: 8,
           borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 8,
         }}>
-          <button onClick={() => allNames.forEach(n => onToggle(n, true))}  style={btnStyle('#3b82f6')}>Show all</button>
-          <button onClick={() => allNames.forEach(n => onToggle(n, false))} style={btnStyle('#374151')}>Hide all</button>
+          <button onClick={() => allNames.forEach(n => onToggle(n, true))}  style={btnStyle('#3b82f6')}>{t('layer.show_all')}</button>
+          <button onClick={() => allNames.forEach(n => onToggle(n, false))} style={btnStyle('#374151')}>{t('layer.hide_all')}</button>
         </div>
       </div>
 
@@ -119,12 +121,12 @@ export default function LayerControlPanel({ layers, onToggle, cellType, cellGap,
           borderTop: '1px solid rgba(255,255,255,0.12)',
           flexShrink: 0,
         }}>
-          <div style={sectionLabel}>Settings</div>
+          <div style={sectionLabel}>{t('layer.settings')}</div>
 
           {onCellGapChange && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span>Cell Gap</span>
+                <span>{t('layer.cell_gap')}</span>
                 <span style={{ color: '#3b82f6', fontWeight: 600 }}>{cellGap.toFixed(1)} mm</span>
               </div>
               <input type="range" min="0" max="5" step="0.1" value={cellGap}
@@ -140,7 +142,7 @@ export default function LayerControlPanel({ layers, onToggle, cellType, cellGap,
           {isPrismatic && onEndPlateChange && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span>End Plate</span>
+                <span>{t('layer.end_plate')}</span>
                 <span style={{ color: '#3b82f6', fontWeight: 600 }}>{endPlateThickness.toFixed(0)} mm</span>
               </div>
               <input type="range" min="0" max="30" step="1" value={endPlateThickness}
@@ -156,7 +158,7 @@ export default function LayerControlPanel({ layers, onToggle, cellType, cellGap,
           {isPrismatic && onBusbarHeightChange && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span>Busbar Width</span>
+                <span>{t('layer.busbar_width')}</span>
                 <span style={{ color: '#3b82f6', fontWeight: 600 }}>{busbarHeight.toFixed(0)} mm</span>
               </div>
               <input type="range" min="5" max="60" step="1" value={busbarHeight}

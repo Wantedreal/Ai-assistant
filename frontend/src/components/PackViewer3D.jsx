@@ -5,10 +5,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { PackAssemblyBuilder } from '../3d/PackAssemblyBuilder.js'
 import LayerControlPanel from './LayerControlPanel.jsx'
 import ExportPanel from './ExportPanel.jsx'
+import { useT } from '../i18n'
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI != null
 
-export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange, endPlateThickness = 10, onEndPlateChange, busbarThickness = 1, onBusbarHeightChange, stepPayload = null }) {
+export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange, endPlateThickness = 10, onEndPlateChange, busbarThickness = 1, onBusbarHeightChange, stepPayload = null, externalBuilderRef = null, onExportGLB, onExportSTL, onExportSTEP, exporting }) {
+  const t = useT()
   const mountRef = useRef(null)
   const controlsRef = useRef(null)
   const cameraRef = useRef(null)
@@ -183,6 +185,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       }
 
       builderRef.current = builder
+      if (externalBuilderRef) externalBuilderRef.current = builder
 
       // Apply any layer toggles that were set before this rebuild
       Object.entries(layers).forEach(([name, vis]) => builder.setLayerVisible(name, vis))
@@ -231,6 +234,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
       return () => {
         builderRef.current = null
+        if (externalBuilderRef) externalBuilderRef.current = null
         cancelAnimationFrame(rafId)
         ro.disconnect()
         controls.dispose()
@@ -341,7 +345,14 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
 
       {/* Export panel (fullscreen only) */}
       {isFullscreen && hasValidResult && (
-        <ExportPanel builderRef={builderRef} stepPayload={stepPayload} />
+        <ExportPanel
+          builderRef={builderRef}
+          stepPayload={stepPayload}
+          onExportGLB={onExportGLB}
+          onExportSTL={onExportSTL}
+          onExportSTEP={onExportSTEP}
+          exporting={exporting}
+        />
       )}
 
       {/* Layer toggle panel (fullscreen only) */}
@@ -372,7 +383,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
         lineHeight: 1,
         color: 'rgba(148,163,184,0.75)',
       }}>
-        3D Pack Visualization
+        {t('pack3d.title')}
       </div>
 
       {/* Placeholder when no result */}
@@ -395,7 +406,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
           fontSize: '0.75rem', opacity: 0.6, fontStyle: 'italic',
           textShadow: '0 2px 4px rgba(0,0,0,0.5)',
         }}>
-          Click to view fullscreen
+          {t('pack3d.fullscreen')}
         </div>
       )}
 

@@ -49,11 +49,28 @@ export const apiService = {
   // Get saved source path
   getImportConfig: () => api.get('/cells/import/config'),
 
+  // Manually set source Excel path (for non-Electron environments)
+  setImportConfig: (path) => api.post('/cells/import/config', { source_path: path }),
+
+  // Clear the saved source Excel path
+  clearImportConfig: () => api.delete('/cells/import/config'),
+
   // Recommend top 5 cells for given constraints
   recommendCells: (payload) => api.post('/cells/recommend', payload),
 
-  // AI chemistry explainer
+  // Phase A — compare multiple cells against the same constraints in parallel
+  compareCards: (payloads) => Promise.all(payloads.map(p => api.post('/calculate', p))),
+
+  // Phase B — Calculation history
+  getHistory: (limit = 50) => api.get(`/history?limit=${limit}`),
+  deleteHistoryEntry: (id) => api.delete(`/history/${id}`),
+  clearHistory: () => api.delete('/history'),
+
+  // AI explainer
   explainResult: (payload) => api.post('/explain', payload),
+
+  // Add a new cell to the catalogue (DB + Excel)
+  addCell: (payload) => api.post('/cells', payload),
 }
 
 export default api

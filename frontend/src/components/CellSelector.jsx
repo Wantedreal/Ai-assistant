@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { apiService } from '../services/api'
 import CellSchematic from './CellSchematic'
+import { useT, useLang } from '../i18n'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (v, unit = '', d = 2) =>
@@ -16,6 +17,7 @@ function formatDimensions(cell) {
 }
 
 function CellSearchSelector({ cells, selectedId, onSelectCell }) {
+  const t = useT()
   const [searchTerm, setSearchTerm] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const inputRef = useRef(null)
@@ -72,13 +74,13 @@ function CellSearchSelector({ cells, selectedId, onSelectCell }) {
 
   return (
     <div className="cell-search-wrapper">
-      <label className="cell-dropdown-label">Search cell</label>
+      <label className="cell-dropdown-label">{t('cell.search_label')}</label>
       <div className="cell-search-container">
         <input
           ref={inputRef}
           type="text"
           className="cell-search-input"
-          placeholder={selectedCell ? selectedCell.nom : 'Type to search...'}
+          placeholder={selectedCell ? selectedCell.nom : t('cell.search_placeholder')}
           value={searchTerm}
           onChange={handleInputChange}
           onFocus={handleFocus}
@@ -116,7 +118,7 @@ function CellSearchSelector({ cells, selectedId, onSelectCell }) {
               )
             })}
             {filteredCells.length === 0 && (
-              <div className="cell-search-no-results">No cells found</div>
+              <div className="cell-search-no-results">{t('cell.no_results')}</div>
             )}
           </div>
         )}
@@ -126,6 +128,7 @@ function CellSearchSelector({ cells, selectedId, onSelectCell }) {
 }
 
 function BestMatches({ form, selectedId, onSelectCell }) {
+  const t = useT()
   const [open, setOpen]       = useState(false)
   const [matches, setMatches] = useState([])
   const [loading, setLoading] = useState(false)
@@ -173,16 +176,16 @@ function BestMatches({ form, selectedId, onSelectCell }) {
   return (
     <div className="best-matches">
       <button className="best-matches__toggle" onClick={handleToggle} type="button">
-        Best matches&nbsp;
+        {t('cell.best_matches')}&nbsp;
         <span className="best-matches__caret">{open ? '▲' : '▼'}</span>
       </button>
 
       {open && (
         <div className="best-matches__list">
-          {loading && <div className="best-matches__state">Loading…</div>}
-          {error   && <div className="best-matches__state best-matches__state--err">{error}</div>}
+          {loading && <div className="best-matches__state">{t('cell.bm_loading')}</div>}
+          {error   && <div className="best-matches__state best-matches__state--err">{t('cell.bm_error')}</div>}
           {!loading && !error && matches.length === 0 && (
-            <div className="best-matches__state">No cells fit these constraints</div>
+            <div className="best-matches__state">{t('cell.bm_empty')}</div>
           )}
           {!loading && !error && matches.map((m, i) => {
             const isNear = m.near_miss
@@ -204,7 +207,7 @@ function BestMatches({ form, selectedId, onSelectCell }) {
                     <span className="cell-chem-pill" data-chem={m.cell.chimie}>{m.cell.chimie}</span>
                   )}
                   {isNear
-                    ? <span className="best-matches__near-tag">near fit</span>
+                    ? <span className="best-matches__near-tag">{t('cell.bm_near')}</span>
                     : <span className="best-matches__config">{m.nb_serie}S/{m.nb_parallele}P</span>
                   }
                 </div>
@@ -216,8 +219,8 @@ function BestMatches({ form, selectedId, onSelectCell }) {
                 </div>
                 <div className="best-matches__reason">
                   {isNear
-                    ? `${m.nb_serie}S/${m.nb_parallele}P · Short by ${Math.abs(minMargin).toFixed(0)} mm`
-                    : `Fill ${m.fill_ratio_pct.toFixed(1)}% · Margin L ${m.margin_l_mm.toFixed(0)} W ${m.margin_w_mm.toFixed(0)} H ${m.margin_h_mm.toFixed(0)} mm`
+                    ? `${m.nb_serie}S/${m.nb_parallele}P · ${t('cell.bm_short')} ${Math.abs(minMargin).toFixed(0)} mm`
+                    : `${t('cell.bm_fill')} ${m.fill_ratio_pct.toFixed(1)}% · ${t('cell.bm_margin')} L ${m.margin_l_mm.toFixed(0)} W ${m.margin_w_mm.toFixed(0)} H ${m.margin_h_mm.toFixed(0)} mm`
                   }
                 </div>
               </div>
@@ -239,17 +242,22 @@ export function CellSelectorCard({
   onReloadCells,
   form,
 }) {
+  const t = useT()
   const fileInputRef = useRef(null)
   const [importing, setImporting] = useState(false)
-  const [syncing, setSyncing]     = useState(false)
-  const [syncMsg, setSyncMsg]     = useState(null)   // { ok: bool, text: string }
+  const [syncing, setSyncing]         = useState(false)
+  const [syncMsg, setSyncMsg]         = useState(null)
   const [hasSyncPath, setHasSyncPath] = useState(false)
+  const [pendingPath, setPendingPath] = useState('')     // shown after import when path not auto-saved
+  const [savingPath, setSavingPath]   = useState(false)
+  const [pathError, setPathError]     = useState(null)
 
-  useEffect(() => {
+  const refreshSyncPath = () =>
     apiService.getImportConfig()
-      .then(({ data }) => setHasSyncPath(!!data.source_path))
-      .catch(() => {})
-  }, [])
+      .then(({ data }) => { setHasSyncPath(!!data.source_path); return !!data.source_path })
+      .catch(() => false)
+
+  useEffect(() => { refreshSyncPath() }, [])
 
   const showMsg = (ok, text) => {
     setSyncMsg({ ok, text })
@@ -263,18 +271,39 @@ export function CellSelectorCard({
     if (!file) return
     e.target.value = ''
 
-    const sourcePath = window.electronAPI?.getFilePath?.(file) ?? null
+    // file.path works in Electron ≤28; webUtils.getPathForFile works in Electron ≥29
+    const electronPath = file.path || window.electronAPI?.getFilePath?.(file) || null
 
     setImporting(true)
+    setPendingPath('')
+    setPathError(null)
     try {
-      const { data } = await apiService.importCells(file, sourcePath)
-      if (sourcePath) setHasSyncPath(true)
+      const { data } = await apiService.importCells(file, electronPath)
       showMsg(true, `Imported ${data.imported} cells`)
       onReloadCells?.()
+      const saved = await refreshSyncPath()
+      // If path wasn't auto-saved (pure browser, no file.path), prompt user
+      if (!saved) setPendingPath(file.name)
     } catch (err) {
       showMsg(false, err.response?.data?.detail ?? 'Import failed')
     } finally {
       setImporting(false)
+    }
+  }
+
+  const handleSavePath = async () => {
+    const p = pendingPath.trim()
+    if (!p) return
+    setSavingPath(true)
+    setPathError(null)
+    try {
+      await apiService.setImportConfig(p)
+      await refreshSyncPath()
+      setPendingPath('')
+    } catch (e) {
+      setPathError(e?.response?.data?.detail ?? 'Invalid path')
+    } finally {
+      setSavingPath(false)
     }
   }
 
@@ -294,7 +323,7 @@ export function CellSelectorCard({
   return (
       <div className="projects-card">
         <div className="projects-card__header">
-          <span className="projects-card__label">Cell Selector</span>
+          <span className="projects-card__label">{t('cell.title')}</span>
         </div>
 
         {/* Best matches */}
@@ -318,19 +347,19 @@ export function CellSelectorCard({
         <div className="cell-specs-wrapper">
           <div className="cell-specs-grid">
             <div className="spec-badge">
-              <span className="spec-badge__label">Weight</span>
+              <span className="spec-badge__label">{t('cell.weight')}</span>
               <span className="spec-badge__value">{masseKg} kg</span>
             </div>
             <div className="spec-badge">
-              <span className="spec-badge__label">Capacity</span>
+              <span className="spec-badge__label">{t('cell.capacity')}</span>
               <span className="spec-badge__value">{fmt(cell?.capacite_ah, 'Ah', 1)}</span>
             </div>
             <div className="spec-badge">
-              <span className="spec-badge__label">Max current</span>
+              <span className="spec-badge__label">{t('cell.max_current')}</span>
               <span className="spec-badge__value">{fmt(cell?.courant_max_a, 'A', 1)}</span>
             </div>
             <div className="spec-badge">
-              <span className="spec-badge__label">Voltage</span>
+              <span className="spec-badge__label">{t('cell.voltage')}</span>
               <span className="spec-badge__value">{fmt(cell?.tension_nominale, 'V', 2)}</span>
             </div>
           </div>
@@ -345,19 +374,19 @@ export function CellSelectorCard({
               {cell.fabricant && <div className="cell-detail__fabricant">{cell.fabricant}</div>}
               <dl className="cell-kv">
                 <div className="cell-kv__row">
-                  <dt>Chemistry</dt>
+                  <dt>{t('cell.chemistry')}</dt>
                   <dd>{cell.chimie ?? '—'}</dd>
                 </div>
                 <div className="cell-kv__row">
-                  <dt>Dimensions</dt>
+                  <dt>{t('cell.dimensions')}</dt>
                   <dd>{formatDimensions(cell)}</dd>
                 </div>
                 <div className="cell-kv__row">
-                  <dt>Swelling</dt>
+                  <dt>{t('cell.swelling')}</dt>
                   <dd>{swellingLabel}</dd>
                 </div>
                 <div className="cell-kv__row">
-                  <dt>Cycle life</dt>
+                  <dt>{t('cell.cycle_life')}</dt>
                   <dd>
                     {cell.cycle_life
                       ? `${cell.cycle_life.toLocaleString()} cycles${cell.dod_reference_pct ? ` @ ${cell.dod_reference_pct}% DoD` : ''}`
@@ -365,19 +394,19 @@ export function CellSelectorCard({
                   </dd>
                 </div>
                 <div className="cell-kv__row">
-                  <dt>Discharge</dt>
+                  <dt>{t('cell.discharge')}</dt>
                   <dd>{cell.c_rate_max_discharge != null ? `${cell.c_rate_max_discharge}C max` : '—'}</dd>
                 </div>
                 <div className="cell-kv__row">
-                  <dt>Charge</dt>
+                  <dt>{t('cell.charge')}</dt>
                   <dd>{cell.c_rate_max_charge != null ? `${cell.c_rate_max_charge}C max` : '—'}</dd>
                 </div>
                 <div className="cell-kv__row">
-                  <dt>Cutoff V</dt>
+                  <dt>{t('cell.cutoff_v')}</dt>
                   <dd>{cell.cutoff_voltage_v != null ? `${cell.cutoff_voltage_v} V` : '—'}</dd>
                 </div>
                 <div className="cell-kv__row">
-                  <dt>Temp range</dt>
+                  <dt>{t('cell.temp_range')}</dt>
                   <dd>
                     {cell.temp_min_c != null ? `${cell.temp_min_c} °C` : '—'}
                     {' → '}
@@ -385,7 +414,7 @@ export function CellSelectorCard({
                   </dd>
                 </div>
                 <div className="cell-kv__row">
-                  <dt>Max charge T</dt>
+                  <dt>{t('cell.max_charge_t')}</dt>
                   <dd>{cell.temp_max_charge_c != null ? `${cell.temp_max_charge_c} °C` : '—'}</dd>
                 </div>
               </dl>
@@ -408,7 +437,7 @@ export function CellSelectorCard({
             onClick={handleImportClick}
             disabled={importing}
           >
-            {importing ? 'Importing...' : 'Import'}
+            {importing ? t('btn.importing') : t('btn.import')}
           </button>
           <button
             type="button"
@@ -418,7 +447,7 @@ export function CellSelectorCard({
             disabled={syncing || !hasSyncPath}
             title={!hasSyncPath ? 'Import a file first to enable Sync' : undefined}
           >
-            {syncing ? 'Syncing...' : 'Sync'}
+            {syncing ? t('btn.syncing') : t('btn.sync')}
           </button>
         </div>
 
@@ -428,109 +457,52 @@ export function CellSelectorCard({
           </div>
         )}
 
+        {/* Shown after import when path wasn't auto-saved (browser mode) */}
+        {pendingPath && (
+          <div style={{
+            marginTop: 8, padding: '8px 10px',
+            background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)',
+            borderRadius: 6, fontSize: '0.78rem', color: '#fbbf24',
+          }}>
+            <div style={{ marginBottom: 6, lineHeight: 1.4 }}>
+              Enter the full path to <strong>{pendingPath}</strong> to enable Sync:
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                value={pendingPath}
+                onChange={e => { setPendingPath(e.target.value); setPathError(null) }}
+                onKeyDown={e => e.key === 'Enter' && handleSavePath()}
+                placeholder="C:\path\to\battery_cells.xlsx"
+                style={{
+                  flex: 1, fontSize: '0.75rem', padding: '4px 8px',
+                  background: '#0f111a', border: '1px solid #374151',
+                  borderRadius: 4, color: '#e2e8f0', outline: 'none',
+                }}
+              />
+              <button
+                type="button"
+                className="modern-btn modern-btn-primary"
+                style={{ padding: '4px 10px', fontSize: '0.75rem', height: 'auto' }}
+                onClick={handleSavePath}
+                disabled={savingPath}
+              >
+                {savingPath ? '…' : 'Save'}
+              </button>
+            </div>
+            {pathError && <div style={{ color: '#f87171', marginTop: 4 }}>{pathError}</div>}
+          </div>
+        )}
+
         <ul className="projects-list" role="list" />
       </div>
   )
 }
 
 
-export function AIFab({ result, cell, form }) {
-  const [open, setOpen]     = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [text, setText]     = useState(null)
-  const [error, setError]   = useState(null)
-  const fetchedForRef       = useRef(null)
-
-  const resultKey = `${result?.nb_serie}-${result?.nb_parallele}-${cell?.id}-${result?.verdict}`
-
-  const toNum = (v, fb = 0) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? fb : n }
-
-  const fetchExplanation = async () => {
-    if (fetchedForRef.current === resultKey) return
-    setLoading(true)
-    setText(null)
-    setError(null)
-    const payload = {
-      cell_id:             cell.id,
-      // constraints
-      energie_cible_wh:    form.energie_cible_wh != null && form.energie_cible_wh !== '' ? toNum(form.energie_cible_wh) : undefined,
-      tension_cible_v:     form.tension_cible_v  != null && form.tension_cible_v  !== '' ? toNum(form.tension_cible_v)  : undefined,
-      courant_cible_a:     toNum(form.courant_cible_a),
-      depth_of_discharge:  toNum(form.depth_of_discharge, 80),
-      cycles_per_day:      toNum(form.cycles_per_day, 1),
-      housing_l:           toNum(form.housing_l),
-      housing_l_small:     toNum(form.housing_l_small),
-      housing_h:           toNum(form.housing_h),
-      // result
-      nb_serie:            result.nb_serie,
-      nb_parallele:        result.nb_parallele,
-      verdict:             result.verdict,
-      justification:       result.justification       ?? undefined,
-      tension_totale_v:    result.tension_totale_v    ?? undefined,
-      energie_reelle_wh:   result.energie_reelle_wh   ?? undefined,
-      pack_l_mm:           result.dimensions_raw?.longueur_mm ?? undefined,
-      pack_w_mm:           result.dimensions_raw?.largeur_mm  ?? undefined,
-      pack_h_mm:           result.dimensions_raw?.hauteur_mm  ?? undefined,
-      margin_l_mm:         result.marges_reelles?.L   ?? undefined,
-      margin_w_mm:         result.marges_reelles?.W   ?? undefined,
-      margin_h_mm:         result.marges_reelles?.H   ?? undefined,
-      lifetime_years:      result.lifetime_years      ?? undefined,
-      c_rate_actual:       result.c_rate_actual       ?? undefined,
-      derating_factor_pct: result.derating_factor_pct ?? undefined,
-      c_rate_warning:      result.c_rate_warning      ?? undefined,
-    }
-    try {
-      const { data } = await apiService.explainResult(payload)
-      setText(data.explanation)
-      fetchedForRef.current = resultKey
-    } catch (e) {
-      const detail = e.response?.data?.detail ?? ''
-      setError(detail.includes('rate-limited') ? 'AI models busy — try again shortly' : detail || 'AI analysis unavailable')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleToggle = () => {
-    if (!open) fetchExplanation()
-    setOpen(v => !v)
-  }
-
-
-  if (!result) return null
-
-  return (
-    <div className="ai-fab-wrapper">
-      {open && (
-        <div className="ai-fab-popover">
-          <div className="ai-fab-popover__header">
-            <span className="ai-fab-popover__badge">AI Analysis</span>
-            <button className="ai-fab-popover__close" onClick={() => setOpen(false)}>✕</button>
-          </div>
-          <div className="ai-fab-popover__body">
-            {loading && (
-              <div className="ai-fab-popover__skeleton">
-                {[95, 88, 92, 70].map((w, i) => (
-                  <div key={i} className="ai-fab-popover__skel-line" style={{ width: `${w}%` }} />
-                ))}
-              </div>
-            )}
-            {error && <p className="ai-fab-popover__error">{error}</p>}
-            {text  && <p className="ai-fab-popover__text">{text}</p>}
-          </div>
-        </div>
-      )}
-
-      <button className={`ai-fab ${open ? 'ai-fab--open' : ''}`} onClick={handleToggle} title="AI Analysis">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
-        </svg>
-      </button>
-    </div>
-  )
-}
-
-export default function CellActionCard({ cell, calculating, onCalculate, calcError, form, result }) {
+export default function CellActionCard({ cell, calculating, onCalculate, calcError, form, result, onOpenAddCell }) {
+  const t = useT()
+  const { lang } = useLang()
   const handleExportPdf = async () => {
     if (!result || !cell) {
       alert('Please calculate the configuration first')
@@ -541,6 +513,7 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
       const toNum = (v, fb = 0) => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? fb : n }
       const payload = {
         cell_id:            cell.id,
+        lang,
         energie_cible_wh:   form.energie_cible_wh  != null && form.energie_cible_wh  !== '' ? toNum(form.energie_cible_wh)  : undefined,
         tension_cible_v:    form.tension_cible_v    != null && form.tension_cible_v    !== '' ? toNum(form.tension_cible_v)    : undefined,
         courant_cible_a:    toNum(form.courant_cible_a),
@@ -565,7 +538,8 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
       const url = window.URL.createObjectURL(new Blob([response.data]))
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `battery_report_${new Date().toISOString().split('T')[0]}.pdf`)
+      const safeName = (cell.nom || 'cell').replace(/[^a-zA-Z0-9_\-]/g, '_')
+      link.setAttribute('download', `${safeName}_report.pdf`)
       document.body.appendChild(link)
       link.click()
       link.parentNode.removeChild(link)
@@ -589,23 +563,20 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
           {calculating
             ? <span className="calc-spinner-wrapper">
                 <span className="calc-spinner" />
-                Calculating…
+                {t('btn.calculating')}
               </span>
-            : 'Calculate'
+            : t('btn.calculate')
           }
         </button>
-        {/* COMMENTED OUT FOR DEMO: PDF export button hidden for progress presentation */}
-        {true && (
-          <button
-            type="button"
-            className="modern-btn modern-btn-secondary"
-            style={{ width: '100%' }}
-            disabled={!result}
-            onClick={handleExportPdf}
-          >
-            Export PDF
-          </button>
-        )}
+        <button
+          type="button"
+          className="modern-btn modern-btn-secondary"
+          style={{ width: '100%' }}
+          disabled={!result}
+          onClick={handleExportPdf}
+        >
+          {t('btn.export_pdf')}
+        </button>
       </div>
 
       {calcError && (
@@ -615,13 +586,14 @@ export default function CellActionCard({ cell, calculating, onCalculate, calcErr
       {result && (
         <div className="verdict-block">
           <span className={`verdict-block__text verdict-block__text--${result.verdict === 'ACCEPT' ? 'accept' : 'reject'}`}>
-            {result.verdict === 'ACCEPT' ? '✓ ACCEPT' : '✗ REJECT'}
+            {result.verdict === 'ACCEPT' ? t('verdict.accept') : t('verdict.reject')}
           </span>
           {result.verdict !== 'ACCEPT' && result.justification && (
             <p className="verdict-block__reason">{result.justification}</p>
           )}
         </div>
       )}
+
     </div>
   )
 }

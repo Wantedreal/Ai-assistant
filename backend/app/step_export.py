@@ -22,10 +22,12 @@ Axis convention (identical to Three.js / PackAssemblyBuilder):
 Author: PFE Capgemini Engineering — Battery Pre-Design Assistant
 """
 
+import hashlib
 import math
 import os
 import tempfile
 import warnings
+from collections import OrderedDict
 from io import BytesIO
 
 import cadquery as cq
@@ -35,6 +37,36 @@ from app.models.cellule import Cellule
 from app.schemas.battery import CalculationRequest, CalculationResult
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="cadquery")
+
+# ── Simple LRU cache (max 4 entries ≈ 4–20 MB RAM) ───────────────────────────
+_CACHE: OrderedDict[str, bytes] = OrderedDict()
+_CACHE_MAX = 4
+
+
+def _cache_key(req: CalculationRequest, result, cell: Cellule) -> str:
+    parts = (
+        result.nb_serie, result.nb_parallele,
+        cell.id,
+        cell.type_cellule,
+        cell.longueur_mm, cell.largeur_mm, cell.hauteur_mm, cell.diameter_mm,
+        req.cell_gap_mm,
+        getattr(req, 'end_plate_thickness_mm', 10.0) or 0.0,
+    )
+    return hashlib.md5(str(parts).encode()).hexdigest()
+
+
+def _cache_get(key: str) -> bytes | None:
+    if key in _CACHE:
+        _CACHE.move_to_end(key)
+        return _CACHE[key]
+    return None
+
+
+def _cache_set(key: str, data: bytes) -> None:
+    _CACHE[key] = data
+    _CACHE.move_to_end(key)
+    if len(_CACHE) > _CACHE_MAX:
+        _CACHE.popitem(last=False)
 
 # ── Constants — keep in sync with PackAssemblyBuilder.js ─────────────────────
 WALL_MM           = 2
@@ -71,7 +103,12 @@ def generate_step_file(
     """
     Build a CadQuery Assembly mirroring the PackAssemblyBuilder.js scene
     and return it as a STEP file in a BytesIO buffer.
+    Results are cached by geometry key — repeat requests return instantly.
     """
+    key = _cache_key(req, result, cell)
+    cached = _cache_get(key)
+    if cached:
+        return BytesIO(cached)
     S   = result.nb_serie
     P   = result.nb_parallele
     gap = req.cell_gap_mm
@@ -125,6 +162,7 @@ def generate_step_file(
         except OSError:
             pass
 
+    _cache_set(key, data)
     return BytesIO(data)
 
 

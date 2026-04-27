@@ -37,6 +37,269 @@ _HOUSING_FILL = colors.HexColor('#eff6ff')
 _DIM_COLOR    = colors.HexColor('#374151')
 
 
+# ─── Translations ─────────────────────────────────────────────────────────────
+_TR = {
+    'en': {
+        'report_title':     'BATTERY PACK PRE-DESIGN REPORT',
+        'generated_on':     'Generated on {date}',
+        'date_fmt':         '%d %B %Y at %H:%M',
+        # Sections
+        's1': '1. INPUT PARAMETERS',
+        's2': '2. CELL SPECIFICATIONS',
+        's3': '3. SIZING METHODOLOGY',
+        's4': '4. PACK SCHEMATICS',
+        's5': '5. RESULTS SUMMARY',
+        # Subsections
+        'ss31_manual':  '3.1  Manual configuration',
+        'ss31_auto':    '3.1  Parallel branch count  P',
+        'ss32':         '3.2  Series element count  S',
+        'ss33':         '3.3  Pack dimensions with swelling',
+        'ss34':         '3.4  Margin verification per face',
+        'ss41':         '4.1  Top view (X–Z plane)',
+        'ss42':         '4.2  Isometric view',
+        'ss51':         '5.1  Pack configuration',
+        'ss52':         '5.2  Electrical summary',
+        'ss53':         '5.3  Mechanical margins',
+        # Input table
+        'col_param':    'Parameter',
+        'col_symbol':   'Symbol',
+        'col_value':    'Value',
+        'p_cell_model': 'Cell model',
+        'p_cell_type':  'Cell type',
+        'p_energy':     'Target energy',
+        'p_voltage':    'Target voltage',
+        'p_current':    'Target current',
+        'p_dod':        'Depth of discharge',
+        'p_housing_l':  'Housing length',
+        'p_housing_w':  'Housing width',
+        'p_housing_h':  'Housing height',
+        'p_margin':     'Safety margin per face',
+        'p_gap':        'Inter-cell gap',
+        'p_mode':       'Configuration mode',
+        'p_ep':         'End plate thickness (per side)',
+        'p_man_s':      'Manual series (imposed)',
+        'p_man_p':      'Manual parallel (imposed)',
+        'mode_manual':  'Manual (S, P imposed)',
+        'mode_auto':    'Automatic',
+        # Cell spec table
+        'c_voltage':    'Nominal voltage V_n',
+        'c_capacity':   'Nominal capacity C',
+        'c_current':    'Max discharge current I_max',
+        'c_mass':       'Mass',
+        'c_swelling':   'Swelling rate τ',
+        'c_diameter':   'Diameter',
+        'c_height':     'Height',
+        'c_height_y':   'Height (Y)',
+        'c_width_z':    'Width (Z)',
+        'c_thick_x':    'Thickness (X)',
+        # Section 3 body text
+        'manual_notice': (
+            'The engineer has directly imposed S = <b>{S}</b> and P = <b>{P}</b>. '
+            'The automatic sizing formulas (§3.1 and §3.2) are bypassed. '
+            'The dimensional and margin checks (§3.3 and §3.4) are applied '
+            'to the imposed configuration.'),
+        'p_parallel_intro': (
+            'The minimum number of parallel branches P is set so that the pack '
+            'can deliver the target current I, given the per-cell maximum I_max :'),
+        'p_series_intro':   'S is the maximum of all active constraints (voltage and/or energy):',
+        'note_voltage':     'Voltage constraint.',
+        'note_energy':      'Energy constraint.',
+        's_max_line':       '→ S = max({cands}) = <b>{S}</b>',
+        'dim_intro': (
+            'Each cell dimension is scaled by the swelling factor (1 + τ). '
+            'Inter-cell gaps add (N−1)×g per axis (N cells, gap g = {gap:.1f} mm).'),
+        'no_swell_cyl':  'no swelling on height for cylindrical',
+        'no_swell_pris': 'cell height — no swelling on Y',
+        'margin_intro': (
+            'Margin δ_actual = (Housing_dim − L_raw) / 2 must exceed the required '
+            'safety margin δ = {delta:.1f} mm on every axis.'),
+        'margin_ok':    '✓ OK',
+        'margin_fail':  '✗ INSUFFICIENT',
+        'min_req':      'min required',
+        # Section 4 captions
+        'cap_top': (
+            'Top-down view. L_housing / l_housing in gray; L_module / l_module in blue. '
+            'Amber Δ = margin per face. '
+            'Blue cells = even series columns, dark blue = odd columns (reversed polarity). '
+            'Array: {S} series × {P} parallel.'),
+        'cap_iso': (
+            'Isometric projection. Housing in light blue (3 visible faces). '
+            'Dashed blue outline = module array. '
+            'Gray dim lines = housing (L / l / h). Blue dim lines = module (L_mod / l_mod / h_mod).'),
+        # Section 5 tables
+        'cfg_s':        'Series count S',
+        'cfg_p':        'Parallel count P',
+        'cfg_total':    'Total cells  S × P',
+        'cfg_mode':     'Configuration mode',
+        'cfg_arr_l':    'Array L (with swelling)',
+        'cfg_arr_w':    'Array l (with swelling)',
+        'cfg_arr_h':    'Array h',
+        'cfg_vol':      'Volume occupancy',
+        'el_voltage':   'Nominal voltage  V = S × V_n',
+        'el_capacity':  'Capacity  C_pack = P × C',
+        'el_energy_t':  'Total energy  E_total',
+        'el_energy_u':  'Usable energy  E_usable (×DoD)',
+        'el_mass':      'Total mass',
+        'el_density':   'Gravimetric energy density',
+        'mg_axis':      'Axis',
+        'mg_housing':   'Housing (mm)',
+        'mg_array':     'Array raw (mm)',
+        'mg_margin':    'Margin (mm)',
+        'mg_required':  'Required (mm)',
+        'mg_status':    'Status',
+        'mg_L':         'L (length)',
+        'mg_W':         'l (width)',
+        'mg_H':         'h (height)',
+        'mg_ok':        '✓ OK',
+        'mg_fail':      '✗ FAIL',
+        'verdict_ok':   '✓  ACCEPT',
+        'verdict_ko':   '✗  REJECT',
+        # Schematic legend
+        'leg_housing':  'Housing',
+        'leg_cells':    'Cells',
+        'cells_label':  '{S}×{P} cells',
+        # Relation/formula labels
+        'rel_label':    'Relation',
+        'an_label':     'A.N.',
+        # Footer
+        'footer_left':  'Battery Pack Pre-Design Assistant — Capgemini Engineering',
+        'footer_page':  'Page',
+    },
+    'fr': {
+        'report_title':     'RAPPORT DE PRÉ-DIMENSIONNEMENT DU PACK BATTERIE',
+        'generated_on':     'Généré le {date}',
+        'date_fmt':         '%d %B %Y à %H:%M',
+        # Sections
+        's1': '1. PARAMÈTRES D\'ENTRÉE',
+        's2': '2. SPÉCIFICATIONS DE LA CELLULE',
+        's3': '3. MÉTHODOLOGIE DE DIMENSIONNEMENT',
+        's4': '4. SCHÉMAS DU PACK',
+        's5': '5. RÉSUMÉ DES RÉSULTATS',
+        # Subsections
+        'ss31_manual':  '3.1  Configuration manuelle',
+        'ss31_auto':    '3.1  Nombre de branches parallèles  P',
+        'ss32':         '3.2  Nombre d\'éléments en série  S',
+        'ss33':         '3.3  Dimensions du pack avec gonflement',
+        'ss34':         '3.4  Vérification des marges par face',
+        'ss41':         '4.1  Vue de dessus (plan X–Z)',
+        'ss42':         '4.2  Vue isométrique',
+        'ss51':         '5.1  Configuration du pack',
+        'ss52':         '5.2  Résumé électrique',
+        'ss53':         '5.3  Marges mécaniques',
+        # Input table
+        'col_param':    'Paramètre',
+        'col_symbol':   'Symbole',
+        'col_value':    'Valeur',
+        'p_cell_model': 'Modèle de cellule',
+        'p_cell_type':  'Type de cellule',
+        'p_energy':     'Énergie cible',
+        'p_voltage':    'Tension cible',
+        'p_current':    'Courant cible',
+        'p_dod':        'Profondeur de décharge',
+        'p_housing_l':  'Longueur du boîtier',
+        'p_housing_w':  'Largeur du boîtier',
+        'p_housing_h':  'Hauteur du boîtier',
+        'p_margin':     'Marge de sécurité par face',
+        'p_gap':        'Jeu inter-cellules',
+        'p_mode':       'Mode de configuration',
+        'p_ep':         'Épaisseur plaque terminale (par côté)',
+        'p_man_s':      'Série manuelle (imposée)',
+        'p_man_p':      'Parallèle manuel (imposé)',
+        'mode_manual':  'Manuel (S, P imposés)',
+        'mode_auto':    'Automatique',
+        # Cell spec table
+        'c_voltage':    'Tension nominale V_n',
+        'c_capacity':   'Capacité nominale C',
+        'c_current':    'Courant max de décharge I_max',
+        'c_mass':       'Masse',
+        'c_swelling':   'Taux de gonflement τ',
+        'c_diameter':   'Diamètre',
+        'c_height':     'Hauteur',
+        'c_height_y':   'Hauteur (Y)',
+        'c_width_z':    'Largeur (Z)',
+        'c_thick_x':    'Épaisseur (X)',
+        # Section 3 body text
+        'manual_notice': (
+            'L\'ingénieur a directement imposé S = <b>{S}</b> et P = <b>{P}</b>. '
+            'Les formules de dimensionnement automatique (§3.1 et §3.2) sont ignorées. '
+            'Les vérifications dimensionnelles et de marge (§3.3 et §3.4) sont appliquées '
+            'à la configuration imposée.'),
+        'p_parallel_intro': (
+            'Le nombre minimal de branches parallèles P est fixé de façon à ce que le pack '
+            'puisse délivrer le courant cible I, compte tenu du maximum par cellule I_max :'),
+        'p_series_intro':   'S est le maximum de toutes les contraintes actives (tension et/ou énergie) :',
+        'note_voltage':     'Contrainte de tension.',
+        'note_energy':      'Contrainte d\'énergie.',
+        's_max_line':       '→ S = max({cands}) = <b>{S}</b>',
+        'dim_intro': (
+            'Chaque dimension de cellule est multipliée par le facteur de gonflement (1 + τ). '
+            'Les jeux inter-cellules ajoutent (N−1)×g par axe (N cellules, jeu g = {gap:.1f} mm).'),
+        'no_swell_cyl':  'pas de gonflement en hauteur pour les cylindriques',
+        'no_swell_pris': 'hauteur cellule — pas de gonflement en Y',
+        'margin_intro': (
+            'La marge δ_réelle = (Dim_boîtier − L_brut) / 2 doit dépasser la marge de sécurité '
+            'requise δ = {delta:.1f} mm sur chaque axe.'),
+        'margin_ok':    '✓ OK',
+        'margin_fail':  '✗ INSUFFISANT',
+        'min_req':      'requis min',
+        # Section 4 captions
+        'cap_top': (
+            'Vue de dessus. L_boîtier / l_boîtier en gris ; L_module / l_module en bleu. '
+            'Δ ambre = marge par face. '
+            'Cellules bleues = colonnes série paires, bleu foncé = colonnes impaires (polarité inversée). '
+            'Tableau : {S} série × {P} parallèle.'),
+        'cap_iso': (
+            'Projection isométrique. Boîtier en bleu clair (3 faces visibles). '
+            'Contour bleu pointillé = tableau de modules. '
+            'Lignes de cote grises = boîtier (L / l / h). Lignes bleues = module (L_mod / l_mod / h_mod).'),
+        # Section 5 tables
+        'cfg_s':        'Nombre de séries S',
+        'cfg_p':        'Nombre de parallèles P',
+        'cfg_total':    'Total cellules  S × P',
+        'cfg_mode':     'Mode de configuration',
+        'cfg_arr_l':    'L tableau (avec gonflement)',
+        'cfg_arr_w':    'l tableau (avec gonflement)',
+        'cfg_arr_h':    'h tableau',
+        'cfg_vol':      'Taux d\'occupation volumique',
+        'el_voltage':   'Tension nominale  V = S × V_n',
+        'el_capacity':  'Capacité  C_pack = P × C',
+        'el_energy_t':  'Énergie totale  E_total',
+        'el_energy_u':  'Énergie utilisable  E_usable (×PdD)',
+        'el_mass':      'Masse totale',
+        'el_density':   'Densité d\'énergie massique',
+        'mg_axis':      'Axe',
+        'mg_housing':   'Boîtier (mm)',
+        'mg_array':     'Tableau brut (mm)',
+        'mg_margin':    'Marge (mm)',
+        'mg_required':  'Requis (mm)',
+        'mg_status':    'Statut',
+        'mg_L':         'L (longueur)',
+        'mg_W':         'l (largeur)',
+        'mg_H':         'h (hauteur)',
+        'mg_ok':        '✓ OK',
+        'mg_fail':      '✗ ÉCHEC',
+        'verdict_ok':   '✓  ACCEPTÉ',
+        'verdict_ko':   '✗  REFUSÉ',
+        # Schematic legend
+        'leg_housing':  'Boîtier',
+        'leg_cells':    'Cellules',
+        'cells_label':  '{S}×{P} cellules',
+        # Relation/formula labels
+        'rel_label':    'Relation',
+        'an_label':     'A.N.',
+        # Footer
+        'footer_left':  'Outil de pré-dimensionnement pack batterie — Capgemini Engineering',
+        'footer_page':  'Page',
+    },
+}
+
+
+def _t(lang: str, key: str, **kwargs) -> str:
+    """Look up a translation string, fall back to English."""
+    s = _TR.get(lang, _TR['en']).get(key) or _TR['en'].get(key, key)
+    return s.format(**kwargs) if kwargs else s
+
+
 # ─── Shared table style ───────────────────────────────────────────────────────
 def _ts(header=_BLUE_MID):
     return TableStyle([
@@ -74,7 +337,7 @@ def _arrow(d, x1, y1, x2, y2, color=_DIM_COLOR):
                       fillColor=color, strokeColor=color, strokeWidth=0))
 
 
-def _pack_schematic(req, result, cell_info):
+def _pack_schematic(req, result, cell_info, lang='en'):
     """
     Build a proportional top-down 2D schematic of the pack.
     X axis (horizontal) = series direction L
@@ -162,7 +425,7 @@ def _pack_schematic(req, result, cell_info):
         d.add(Rect(arr_ox, arr_oy, arr_L_pt, arr_W_pt,
                    fillColor=c1, strokeColor=colors.white, strokeWidth=1))
         d.add(String(arr_ox + arr_L_pt / 2, arr_oy + arr_W_pt / 2,
-                     f'{S}×{P} cells', fontSize=8, textAnchor='middle',
+                     _t(lang, 'cells_label', S=S, P=P), fontSize=8, textAnchor='middle',
                      fillColor=colors.white, fontName='Helvetica-Bold'))
 
     # End plates (prismatic)
@@ -256,9 +519,9 @@ def _pack_schematic(req, result, cell_info):
     leg_x = rx_h + 5
     leg_y = oy + hW_pt - 8
     d.add(Rect(leg_x, leg_y,      8, 6, fillColor=_HOUSING_FILL, strokeColor=_BLUE_MID, strokeWidth=0.8))
-    d.add(String(leg_x + 10, leg_y + 1, 'Housing', fontSize=6, fillColor=_DIM_COLOR))
+    d.add(String(leg_x + 10, leg_y + 1, _t(lang, 'leg_housing'), fontSize=6, fillColor=_DIM_COLOR))
     d.add(Rect(leg_x, leg_y - 10, 8, 6, fillColor=c1, strokeColor=colors.white, strokeWidth=0.3))
-    d.add(String(leg_x + 10, leg_y - 9, 'Cells',   fontSize=6, fillColor=_DIM_COLOR))
+    d.add(String(leg_x + 10, leg_y - 9, _t(lang, 'leg_cells'), fontSize=6, fillColor=_DIM_COLOR))
 
     return d
 
@@ -421,12 +684,13 @@ def _make_styles():
     base = getSampleStyleSheet()
 
     title = ParagraphStyle('RTitle', parent=base['Normal'],
-        fontSize=20, fontName='Helvetica-Bold',
-        textColor=_BLUE_DARK, alignment=TA_CENTER, spaceAfter=10)
+        fontSize=22, fontName='Helvetica-Bold',
+        textColor=_BLUE_DARK, alignment=TA_CENTER,
+        spaceBefore=8, spaceAfter=6, leading=28)
 
     subtitle = ParagraphStyle('RSubtitle', parent=base['Normal'],
         fontSize=9, fontName='Helvetica',
-        textColor=colors.HexColor('#6b7280'), alignment=TA_CENTER, spaceAfter=0)
+        textColor=colors.HexColor('#6b7280'), alignment=TA_CENTER, spaceAfter=4)
 
     section = ParagraphStyle('RSection', parent=base['Normal'],
         fontSize=11, fontName='Helvetica-Bold',
@@ -477,18 +741,17 @@ def _make_styles():
 
 
 # ─── Footer ───────────────────────────────────────────────────────────────────
-def _footer(canvas_obj, doc):
+def _footer(canvas_obj, doc, lang='en'):
     canvas_obj.saveState()
     canvas_obj.setFont('Helvetica', 8)
     canvas_obj.setFillColor(colors.HexColor('#9ca3af'))
-    canvas_obj.drawString(20 * mm, 10 * mm,
-        'Battery Pack Pre-Design Assistant — Capgemini Engineering')
-    canvas_obj.drawRightString(190 * mm, 10 * mm, f'Page {doc.page}')
+    canvas_obj.drawString(20 * mm, 10 * mm, _t(lang, 'footer_left'))
+    canvas_obj.drawRightString(190 * mm, 10 * mm, f'{_t(lang, "footer_page")} {doc.page}')
     canvas_obj.restoreState()
 
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
-def generate_pdf_report(calculation_request, calculation_result, cell_info):
+def generate_pdf_report(calculation_request, calculation_result, cell_info, lang: str = 'en'):
     """
     Generate a professional engineering PDF report.
 
@@ -529,43 +792,43 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
 
     # ── Title block ──────────────────────────────────────────────────────────
     story.append(Spacer(1, 4*mm))
-    story.append(Paragraph('BATTERY PACK PRE-DESIGN REPORT', st['title']))
+    story.append(Paragraph(_t(lang, 'report_title'), st['title']))
     story.append(Paragraph(
-        datetime.now().strftime('Generated on %d %B %Y at %H:%M'),
+        _t(lang, 'generated_on', date=datetime.now().strftime(_t(lang, 'date_fmt'))),
         st['subtitle']))
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 5*mm))
     story.append(HRFlowable(width='100%', thickness=1.5, color=_BLUE_MID))
-    story.append(Spacer(1, 6*mm))
+    story.append(Spacer(1, 8*mm))
 
     # ── Input parameters ─────────────────────────────────────────────────────
-    story.append(Paragraph('1. INPUT PARAMETERS', st['section']))
+    story.append(Paragraph(_t(lang, 's1'), st['section']))
 
     def _fmt_opt(v, unit='', digits=1):
         if v is None:
             return '—'
         return f'{v:.{digits}f} {unit}'.strip()
 
-    mode_label = 'Manual (S, P imposed)' if is_manual else 'Automatic'
+    mode_label = _t(lang, 'mode_manual') if is_manual else _t(lang, 'mode_auto')
     input_rows = [
-        ['Parameter', 'Symbol', 'Value'],
-        ['Cell model',              '—',    cell.nom],
-        ['Cell type',               '—',    cell.type_cellule],
-        ['Target energy',           'E',    _fmt_opt(req.energie_cible_wh, 'Wh')],
-        ['Target voltage',          'V',    _fmt_opt(req.tension_cible_v, 'V')],
-        ['Target current',          'I',    f'{req.courant_cible_a:.1f} A'],
-        ['Depth of discharge',      'DoD',  f'{req.depth_of_discharge:.1f} %'],
-        ['Housing length',          'L',    f'{req.housing_l:.1f} mm'],
-        ['Housing width',           'l',    f'{req.housing_l_small:.1f} mm'],
-        ['Housing height',          'h',    f'{req.housing_h:.1f} mm'],
-        ['Safety margin per face',  'δ',    f'{req.marge_mm:.1f} mm'],
-        ['Inter-cell gap',          'g',    f'{gap:.1f} mm'],
-        ['Configuration mode',      '—',    mode_label],
+        [_t(lang,'col_param'), _t(lang,'col_symbol'), _t(lang,'col_value')],
+        [_t(lang,'p_cell_model'), '—', cell.nom],
+        [_t(lang,'p_cell_type'),  '—', cell.type_cellule],
+        [_t(lang,'p_energy'),     'E', _fmt_opt(req.energie_cible_wh, 'Wh')],
+        [_t(lang,'p_voltage'),    'V', _fmt_opt(req.tension_cible_v, 'V')],
+        [_t(lang,'p_current'),    'I', f'{req.courant_cible_a:.1f} A'],
+        [_t(lang,'p_dod'),        'DoD', f'{req.depth_of_discharge:.1f} %'],
+        [_t(lang,'p_housing_l'),  'L', f'{req.housing_l:.1f} mm'],
+        [_t(lang,'p_housing_w'),  'l', f'{req.housing_l_small:.1f} mm'],
+        [_t(lang,'p_housing_h'),  'h', f'{req.housing_h:.1f} mm'],
+        [_t(lang,'p_margin'),     'δ', f'{req.marge_mm:.1f} mm'],
+        [_t(lang,'p_gap'),        'g', f'{gap:.1f} mm'],
+        [_t(lang,'p_mode'),       '—', mode_label],
     ]
     if cell_type == 'prismatic':
-        input_rows.insert(-1, ['End plate thickness (per side)', 'e_p', f'{ep:.1f} mm'])
+        input_rows.insert(-1, [_t(lang,'p_ep'), 'e_p', f'{ep:.1f} mm'])
     if is_manual:
-        input_rows.append(['Manual series (imposed)',   'S',  str(req.manual_series or S)])
-        input_rows.append(['Manual parallel (imposed)', 'P',  str(req.manual_parallel or P)])
+        input_rows.append([_t(lang,'p_man_s'), 'S', str(req.manual_series or S)])
+        input_rows.append([_t(lang,'p_man_p'), 'P', str(req.manual_parallel or P)])
 
     col_w = [75*mm, 20*mm, 75*mm]
     base_ts = _ts()
@@ -578,27 +841,27 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
     story.append(Spacer(1, 5*mm))
 
     # ── Cell specifications ───────────────────────────────────────────────────
-    story.append(Paragraph('2. CELL SPECIFICATIONS', st['section']))
+    story.append(Paragraph(_t(lang, 's2'), st['section']))
 
     if cell_type == 'cylindrical':
         diam = cell.diameter_mm or cell.longueur_mm
         dim_rows = [
-            ['Diameter', f'{diam:.1f} mm'],
-            ['Height',   f'{cell.hauteur_mm:.1f} mm'],
+            [_t(lang,'c_diameter'), f'{diam:.1f} mm'],
+            [_t(lang,'c_height'),   f'{cell.hauteur_mm:.1f} mm'],
         ]
     else:
         dim_rows = [
-            ['Height (Y)',    f'{cell.longueur_mm:.1f} mm'],
-            ['Width (Z)',     f'{cell.largeur_mm:.1f} mm'],
-            ['Thickness (X)', f'{cell.hauteur_mm:.1f} mm'],
+            [_t(lang,'c_height_y'), f'{cell.longueur_mm:.1f} mm'],
+            [_t(lang,'c_width_z'),  f'{cell.largeur_mm:.1f} mm'],
+            [_t(lang,'c_thick_x'),  f'{cell.hauteur_mm:.1f} mm'],
         ]
 
-    cell_rows = [['Parameter', 'Value']] + [
-        ['Nominal voltage V_n',       f'{cell.tension_nominale:.3f} V'],
-        ['Nominal capacity C',        f'{cell.capacite_ah:.2f} Ah'],
-        ['Max discharge current I_max', f'{cell.courant_max_a:.1f} A'],
-        ['Mass',                      f'{cell.masse_g:.1f} g'],
-        ['Swelling rate τ',           f'{swelling_pct:.1f} %'],
+    cell_rows = [[_t(lang,'col_param'), _t(lang,'col_value')]] + [
+        [_t(lang,'c_voltage'),  f'{cell.tension_nominale:.3f} V'],
+        [_t(lang,'c_capacity'), f'{cell.capacite_ah:.2f} Ah'],
+        [_t(lang,'c_current'),  f'{cell.courant_max_a:.1f} A'],
+        [_t(lang,'c_mass'),     f'{cell.masse_g:.1f} g'],
+        [_t(lang,'c_swelling'), f'{swelling_pct:.1f} %'],
     ] + dim_rows
 
     t_cell = Table(cell_rows, colWidths=[95*mm, 75*mm])
@@ -609,35 +872,25 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 3 — Sizing Methodology
     # ══════════════════════════════════════════════════════════════════════════
-    story.append(Paragraph('3. SIZING METHODOLOGY', st['section']))
+    story.append(Paragraph(_t(lang, 's3'), st['section']))
 
     def formula_block(relation, an_str, result_str, note_str=None):
         """Helper: returns a list of story elements for one formula step."""
         out = []
-        out.append(Paragraph(f'Relation :&nbsp;&nbsp;&nbsp; {relation}', st['formula']))
-        out.append(Paragraph(f'A.N. :&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {an_str}', st['an']))
+        out.append(Paragraph(f'{_t(lang,"rel_label")} :&nbsp;&nbsp;&nbsp; {relation}', st['formula']))
+        out.append(Paragraph(f'{_t(lang,"an_label")} :&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {an_str}', st['an']))
         out.append(Paragraph(f'→ {result_str}', st['result_line']))
         if note_str:
             out.append(Paragraph(note_str, st['note']))
         return out
 
     if is_manual:
-        # ── Manual mode notice ────────────────────────────────────────────────
-        story.append(Paragraph('3.1  Manual configuration', st['subsection']))
-        story.append(Paragraph(
-            f'The engineer has directly imposed S = <b>{S}</b> and P = <b>{P}</b>. '
-            f'The automatic sizing formulas (§3.1 and §3.2) are bypassed. '
-            f'The dimensional and margin checks (§3.3 and §3.4) are applied '
-            f'to the imposed configuration.',
-            st['normal']))
+        story.append(Paragraph(_t(lang, 'ss31_manual'), st['subsection']))
+        story.append(Paragraph(_t(lang, 'manual_notice', S=S, P=P), st['normal']))
         story.append(Spacer(1, 4*mm))
     else:
-        # ── Step 3.1 — P (parallel) ───────────────────────────────────────────
-        story.append(Paragraph('3.1  Parallel branch count  P', st['subsection']))
-        story.append(Paragraph(
-            'The minimum number of parallel branches P is set so that the pack '
-            'can deliver the target current I, given the per-cell maximum I_max :',
-            st['normal']))
+        story.append(Paragraph(_t(lang, 'ss31_auto'), st['subsection']))
+        story.append(Paragraph(_t(lang, 'p_parallel_intro'), st['normal']))
         an_p = (f'P = ⌈ {req.courant_cible_a:.1f} / {cell.courant_max_a:.1f} ⌉'
                 f' = ⌈ {req.courant_cible_a/cell.courant_max_a:.3f} ⌉')
         story.extend(formula_block(
@@ -646,11 +899,8 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
             f'P = {P}'))
         story.append(Spacer(1, 2*mm))
 
-        # ── Step 3.2 — S (series) ─────────────────────────────────────────────
-        story.append(Paragraph('3.2  Series element count  S', st['subsection']))
-        story.append(Paragraph(
-            'S is the maximum of all active constraints (voltage and/or energy):',
-            st['normal']))
+        story.append(Paragraph(_t(lang, 'ss32'), st['subsection']))
+        story.append(Paragraph(_t(lang, 'p_series_intro'), st['normal']))
 
         s_candidates_display = []
 
@@ -662,7 +912,7 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
                 'S_V = ⌈ V_cible / V_n ⌉',
                 an_sv,
                 f'S_V = {s_v}',
-                'Voltage constraint.'))
+                _t(lang, 'note_voltage')))
             s_candidates_display.append(f'S_V = {s_v}')
 
         if req.energie_cible_wh is not None:
@@ -676,21 +926,17 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
                 'S_E = ⌈ E_cible / (V_n × C × P × DoD) ⌉',
                 an_se,
                 f'S_E = {s_e}',
-                'Energy constraint.'))
+                _t(lang, 'note_energy')))
             s_candidates_display.append(f'S_E = {s_e}')
 
         if len(s_candidates_display) > 1:
             story.append(Paragraph(
-                f'→ S = max({", ".join(s_candidates_display)}) = <b>{S}</b>',
+                _t(lang, 's_max_line', cands=', '.join(s_candidates_display), S=S),
                 st['result_line']))
         story.append(Spacer(1, 2*mm))
 
-    # ── Step 3.3 — Dimensions ─────────────────────────────────────────────────
-    story.append(Paragraph('3.3  Pack dimensions with swelling', st['subsection']))
-    story.append(Paragraph(
-        f'Each cell dimension is scaled by the swelling factor (1 + τ). '
-        f'Inter-cell gaps add (N−1)×g per axis (N cells, gap g = {gap:.1f} mm).',
-        st['normal']))
+    story.append(Paragraph(_t(lang, 'ss33'), st['subsection']))
+    story.append(Paragraph(_t(lang, 'dim_intro', gap=gap), st['normal']))
 
     L_raw = result.dimensions_raw.longueur_mm
     W_raw = result.dimensions_raw.largeur_mm
@@ -704,7 +950,7 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
                 f' = {L_sw:.1f} mm')
         an_W = (f'l = {P}×{diam:.1f}×(1+{swelling_pct:.1f}/100) + ({P}-1)×{gap:.1f}'
                 f' = {W_sw:.1f} mm')
-        an_H = f'h = {cell.hauteur_mm:.1f} mm  (no swelling on height for cylindrical)'
+        an_H = f'h = {cell.hauteur_mm:.1f} mm  ({_t(lang, "no_swell_cyl")})'
         rel_L = 'L = S × d × (1 + τ) + (S−1) × g'
         rel_W = 'l = P × d × (1 + τ) + (P−1) × g'
     else:
@@ -713,7 +959,7 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
                 f' = {L_sw:.1f} mm')
         an_W = (f'l = {P}×{cell.largeur_mm:.1f}×(1+{swelling_pct:.1f}/100) + ({P}-1)×{gap:.1f}'
                 f' = {W_sw:.1f} mm')
-        an_H = f'h = {cell.longueur_mm:.1f} mm  (cell height — no swelling on Y)'
+        an_H = f'h = {cell.longueur_mm:.1f} mm  ({_t(lang, "no_swell_pris")})'
         rel_L = 'L = S × h_cell × (1 + τ) + (S−1) × g + 2 × e_p' if ep > 0 else 'L = S × h_cell × (1 + τ) + (S−1) × g'
         rel_W = 'l = P × l_cell × (1 + τ) + (P−1) × g'
 
@@ -722,121 +968,108 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
     story.append(Paragraph(f'→ h_pack = {an_H}', st['result_line']))
     story.append(Spacer(1, 2*mm))
 
-    # ── Step 3.4 — Margin verification ────────────────────────────────────────
-    story.append(Paragraph('3.4  Margin verification per face', st['subsection']))
-    story.append(Paragraph(
-        f'Margin δ_actual = (Housing_dim − L_raw) / 2 must exceed the required '
-        f'safety margin δ = {req.marge_mm:.1f} mm on every axis.',
-        st['normal']))
+    story.append(Paragraph(_t(lang, 'ss34'), st['subsection']))
+    story.append(Paragraph(_t(lang, 'margin_intro', delta=req.marge_mm), st['normal']))
 
     margins = result.marges_reelles
     mL, mW, mH = margins.get('L', 0), margins.get('W', 0), margins.get('H', 0)
 
     def _margin_an(housing_dim, raw_dim, actual_margin, axis_label):
-        ok_str = '✓ OK' if actual_margin >= req.marge_mm else '✗ INSUFFICIENT'
+        ok_str = _t(lang, 'margin_ok') if actual_margin >= req.marge_mm else _t(lang, 'margin_fail')
         return (
-            f'δ_{axis_label} = ⌊ {housing_dim:.1f} − {raw_dim:.1f} ⌋ / 2 = {actual_margin:.1f} mm   [{ok_str}]')
+            f'δ_{axis_label} = ⌊ {housing_dim:.1f} − {raw_dim:.1f} ⌋ / 2 = {actual_margin:.1f} mm   [{ok_str}]',
+    )
 
+    _min_req = _t(lang, 'min_req')
     story.extend(formula_block(
         'δ = (Dim_housing − Dim_raw) / 2 ≥ δ_min',
         _margin_an(req.housing_l,       L_raw, mL, 'L'),
-        f'δ_L = {mL:.1f} mm  (min required: {req.marge_mm:.1f} mm)'))
+        f'δ_L = {mL:.1f} mm  ({_min_req}: {req.marge_mm:.1f} mm)'))
     story.extend(formula_block(
         'δ = (Dim_housing − Dim_raw) / 2 ≥ δ_min',
         _margin_an(req.housing_l_small, W_raw, mW, 'l'),
-        f'δ_l = {mW:.1f} mm  (min required: {req.marge_mm:.1f} mm)'))
+        f'δ_l = {mW:.1f} mm  ({_min_req}: {req.marge_mm:.1f} mm)'))
     story.extend(formula_block(
         'δ = (Dim_housing − Dim_raw) / 2 ≥ δ_min',
         _margin_an(req.housing_h,       H_raw, mH, 'h'),
-        f'δ_h = {mH:.1f} mm  (min required: {req.marge_mm:.1f} mm)'))
+        f'δ_h = {mH:.1f} mm  ({_min_req}: {req.marge_mm:.1f} mm)'))
 
     story.append(Spacer(1, 6*mm))
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 4 — Pack Schematics
     # ══════════════════════════════════════════════════════════════════════════
-    story.append(Paragraph('4. PACK SCHEMATICS', st['section']))
+    story.append(Paragraph(_t(lang, 's4'), st['section']))
     story.append(Spacer(1, 2*mm))
 
-    story.append(Paragraph('4.1  Top view (X–Z plane)', st['subsection']))
-    schematic = _pack_schematic(req, result, cell_info)
+    story.append(Paragraph(_t(lang, 'ss41'), st['subsection']))
+    schematic = _pack_schematic(req, result, cell_info, lang=lang)
     story.append(schematic)
-    story.append(Paragraph(
-        f'Top-down view. L_housing / l_housing in gray; L_module / l_module in blue. '
-        f'Amber Δ = margin per face. '
-        f'Blue cells = even series columns, dark blue = odd columns (reversed polarity). '
-        f'Array: {S} series × {P} parallel.',
-        st['caption']))
+    story.append(Paragraph(_t(lang, 'cap_top', S=S, P=P), st['caption']))
     story.append(Spacer(1, 4*mm))
 
-    story.append(Paragraph('4.2  Isometric view', st['subsection']))
+    story.append(Paragraph(_t(lang, 'ss42'), st['subsection']))
     iso_drawing = _pack_isometric(req, result)
     story.append(iso_drawing)
-    story.append(Paragraph(
-        f'Isometric projection. Housing in light blue (3 visible faces). '
-        f'Dashed blue outline = module array. '
-        f'Gray dim lines = housing (L / l / h). Blue dim lines = module (L_mod / l_mod / h_mod).',
-        st['caption']))
+    story.append(Paragraph(_t(lang, 'cap_iso'), st['caption']))
     story.append(Spacer(1, 6*mm))
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 5 — Results
     # ══════════════════════════════════════════════════════════════════════════
-    story.append(Paragraph('5. RESULTS SUMMARY', st['section']))
+    story.append(Paragraph(_t(lang, 's5'), st['section']))
 
-    # ── Configuration ─────────────────────────────────────────────────────────
-    story.append(Paragraph('5.1  Pack configuration', st['subsection']))
+    story.append(Paragraph(_t(lang, 'ss51'), st['subsection']))
     cfg_rows = [
-        ['Parameter', 'Value'],
-        ['Series count S',         str(S)],
-        ['Parallel count P',       str(P)],
-        ['Total cells  S × P',     str(S * P)],
-        ['Configuration mode',     mode_label],
-        ['Array L (with swelling)', f'{L_sw:.1f} mm'],
-        ['Array l (with swelling)', f'{W_sw:.1f} mm'],
-        ['Array h',                 f'{H_raw:.1f} mm'],
-        ['Volume occupancy',        f'{result.taux_occupation_pct:.1f} %'],
+        [_t(lang,'col_param'), _t(lang,'col_value')],
+        [_t(lang,'cfg_s'),     str(S)],
+        [_t(lang,'cfg_p'),     str(P)],
+        [_t(lang,'cfg_total'), str(S * P)],
+        [_t(lang,'cfg_mode'),  mode_label],
+        [_t(lang,'cfg_arr_l'), f'{L_sw:.1f} mm'],
+        [_t(lang,'cfg_arr_w'), f'{W_sw:.1f} mm'],
+        [_t(lang,'cfg_arr_h'), f'{H_raw:.1f} mm'],
+        [_t(lang,'cfg_vol'),   f'{result.taux_occupation_pct:.1f} %'],
     ]
     t_cfg = Table(cfg_rows, colWidths=[95*mm, 75*mm])
     t_cfg.setStyle(_ts())
     story.append(t_cfg)
     story.append(Spacer(1, 5*mm))
 
-    # ── Electrical ────────────────────────────────────────────────────────────
-    story.append(Paragraph('5.2  Electrical summary', st['subsection']))
+    story.append(Paragraph(_t(lang, 'ss52'), st['subsection']))
     elec = result.electrical
     elec_rows = [
-        ['Parameter', 'Value'],
-        ['Nominal voltage  V = S × V_n',    f'{elec.actual_voltage_v:.2f} V'],
-        ['Capacity  C_pack = P × C',         f'{elec.actual_capacity_ah:.2f} Ah'],
-        ['Total energy  E_total',            f'{elec.total_energy_wh:.1f} Wh'],
-        ['Usable energy  E_usable (×DoD)',   f'{elec.usable_energy_wh:.1f} Wh'],
-        ['Total mass',                        f'{elec.total_weight_kg:.3f} kg'],
-        ['Gravimetric energy density',        f'{elec.energy_density_wh_kg:.1f} Wh/kg'],
+        [_t(lang,'col_param'), _t(lang,'col_value')],
+        [_t(lang,'el_voltage'),  f'{elec.actual_voltage_v:.2f} V'],
+        [_t(lang,'el_capacity'), f'{elec.actual_capacity_ah:.2f} Ah'],
+        [_t(lang,'el_energy_t'), f'{elec.total_energy_wh:.1f} Wh'],
+        [_t(lang,'el_energy_u'), f'{elec.usable_energy_wh:.1f} Wh'],
+        [_t(lang,'el_mass'),     f'{elec.total_weight_kg:.3f} kg'],
+        [_t(lang,'el_density'),  f'{elec.energy_density_wh_kg:.1f} Wh/kg'],
     ]
     t_elec = Table(elec_rows, colWidths=[95*mm, 75*mm])
     t_elec.setStyle(_ts())
     story.append(t_elec)
     story.append(Spacer(1, 5*mm))
 
-    # ── Margins table ─────────────────────────────────────────────────────────
-    story.append(Paragraph('5.3  Mechanical margins', st['subsection']))
+    story.append(Paragraph(_t(lang, 'ss53'), st['subsection']))
     req_margin = req.marge_mm
 
     def _cell_color_margin(val):
         return _GREEN_OK if val >= req_margin else _RED_KO
 
     margin_rows = [
-        ['Axis', 'Housing (mm)', 'Array raw (mm)', 'Margin (mm)', 'Required (mm)', 'Status'],
-        ['L (length)',
+        [_t(lang,'mg_axis'), _t(lang,'mg_housing'), _t(lang,'mg_array'),
+         _t(lang,'mg_margin'), _t(lang,'mg_required'), _t(lang,'mg_status')],
+        [_t(lang,'mg_L'),
          f'{req.housing_l:.1f}',       f'{L_raw:.1f}', f'{mL:.1f}', f'{req_margin:.1f}',
-         '✓ OK' if mL >= req_margin else '✗ FAIL'],
-        ['l (width)',
+         _t(lang,'mg_ok') if mL >= req_margin else _t(lang,'mg_fail')],
+        [_t(lang,'mg_W'),
          f'{req.housing_l_small:.1f}', f'{W_raw:.1f}', f'{mW:.1f}', f'{req_margin:.1f}',
-         '✓ OK' if mW >= req_margin else '✗ FAIL'],
-        ['h (height)',
+         _t(lang,'mg_ok') if mW >= req_margin else _t(lang,'mg_fail')],
+        [_t(lang,'mg_H'),
          f'{req.housing_h:.1f}',       f'{H_raw:.1f}', f'{mH:.1f}', f'{req_margin:.1f}',
-         '✓ OK' if mH >= req_margin else '✗ FAIL'],
+         _t(lang,'mg_ok') if mH >= req_margin else _t(lang,'mg_fail')],
     ]
     col_w_m = [28*mm, 30*mm, 33*mm, 28*mm, 30*mm, 21*mm]
     t_margin = Table(margin_rows, colWidths=col_w_m)
@@ -861,7 +1094,7 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
     # ── Verdict ───────────────────────────────────────────────────────────────
     v_color = _GREEN_OK if is_ok else _RED_KO
     v_bg    = _GREEN_BG if is_ok else _RED_BG
-    v_text  = '✓  ACCEPT' if is_ok else '✗  REJECT'
+    v_text  = _t(lang, 'verdict_ok') if is_ok else _t(lang, 'verdict_ko')
     verdict_table = Table([[v_text]], colWidths=[170*mm])
     verdict_table.setStyle(TableStyle([
         ('BACKGROUND',    (0, 0), (-1, -1), v_bg),
@@ -880,6 +1113,7 @@ def generate_pdf_report(calculation_request, calculation_result, cell_info):
         story.append(Paragraph(result.justification, st['normal']))
 
     # ── Build ─────────────────────────────────────────────────────────────────
-    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    footer_fn = lambda c, d: _footer(c, d, lang=lang)
+    doc.build(story, onFirstPage=footer_fn, onLaterPages=footer_fn)
     buf.seek(0)
     return buf
