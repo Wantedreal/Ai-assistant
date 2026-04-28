@@ -384,6 +384,10 @@ The bottom row (`bottom-row`) is a flex row with `align-items: stretch`. Cards i
   - Removed: `bms_spec.py`, `ExplainerPanel.jsx`, `routers/cellules.py`, `schemas/cellule.py`, `calibrate_derating.py`, `PackPreview.jsx`, `generate-icon.cjs`, `test.txt`, `index.html.old`, `test_report.pdf`, two Jupyter notebooks, two legacy import scripts, two test Excel files, `database_folder/`, `ref_3D/`, `backend/app/routers/`, `backend/scripts/`, `frontend/scripts/`
   - `step_export.py`: removed dead `_build_bms()` and `_build_main_cables()` functions and 4 unused cable color constants
 
+- **Demo mode** (`frontend/.env.demo`, `Header.jsx`, `App.jsx`, `package.json`): `VITE_DEMO_MODE=true` build flag hides Cells/Compare/History nav buttons, EN/FR language toggle, and AI fab — leaving only the core sizing workflow visible. Run with `npm run dev:demo` (dev) or `npm run build:demo` (production build). Import and Sync remain visible. `DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'` constant defined at module level in `Header.jsx` and `App.jsx`.
+
+- **CORS fix** (`backend/app/main.py`): Added `allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"` — covers any port Vite auto-selects when 5173 is occupied, and Electron `file://` origin. Prevents "Cannot reach API" errors when stale processes hold lower ports.
+
 ### Distribution
 
 Copy `frontend/release/Battery Pack Designer Setup 1.0.0.exe` to target machine (USB, file share, etc.). Double-click to install — no Python or Node.js required. If Windows SmartScreen blocks it: "More info" → "Run anyway" (unsigned app warning, normal for internal tools).
@@ -391,4 +395,4 @@ Copy `frontend/release/Battery Pack Designer Setup 1.0.0.exe` to target machine 
 If the app fails on a very old machine: install [VC++ 2015-2022 Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) (required by Python 3.13, usually pre-installed on Windows 10/11).
 
 ## Your task
-I want you now to review the code I already make a graph to explain for you the structure and content of the code , I want to show my department team the etat d'avancement but I don't want to show them all those functionalities what I want is to hide the all cells and add one in the ui , also the cell compare historique and the ai analysis 
+Review code quality and plan next steps. Session work (2026-04-28): added demo mode flag, fixed CORS port-binding issue, pushed battery_cells_curated.xlsx to git.

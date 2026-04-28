@@ -1,11 +1,13 @@
 node_modules/
 dist/
 .venv/
+venv/
 __pycache__/
 *.pyc
 
 # PyInstaller build cache (regenerated on every build)
 backend/build/
+backend/dist/
 
 # Electron installer output — large binary artifacts, not source
 frontend/release/
@@ -28,3 +30,9 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# Per-machine config (stores local Excel source path)
+backend/data/import_config.json
+
+# Claude Code session data
+.claude/
