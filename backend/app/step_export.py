@@ -85,10 +85,6 @@ C_ORANGE      = Color(0.98, 0.45, 0.09)
 C_GRAY        = Color(0.42, 0.45, 0.50)
 C_RED         = Color(0.86, 0.15, 0.15)
 C_BRASS       = Color(0.85, 0.47, 0.04)
-C_CABLE_RED   = Color(0.86, 0.15, 0.15)
-C_CABLE_BLACK = Color(0.07, 0.07, 0.07)
-C_CABLE_ORG   = Color(0.80, 0.27, 0.00)
-C_CABLE_BLUE  = Color(0.11, 0.31, 0.85)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -438,80 +434,3 @@ def _build_side_plates(asm, S, P, sizeX, sizeZ, bodyH, yCenter, stepX, stepZ, ga
     # End plates: ep thick, height = bodyH, Z span = array width
     end = _box(ep, bodyH, ahz * 2)
     _batch(end, [_loc(ahx + ep/2, yCenter, 0), _loc(-ahx - ep/2, yCenter, 0)], "end_plates", C_GRAY, asm)
-
-
-# ── BMS ───────────────────────────────────────────────────────────────────────
-
-def _build_bms(asm, S, yCenter, total_z):
-    bms_l = max(80, S*8+30)
-    bms_w = 50
-    bth   = 15
-    bx, by, bz = 0, yCenter, total_z/2 + bth/2 + 1
-
-    asm.add(_box(bms_l-10, bms_w, bth), name="bms_body",  color=C_RED,   loc=_loc(bx, by, bz))
-    cap = _box(5, bms_w, bth)
-    _batch(cap, [_loc(bx-bms_l/2+2.5, by, bz), _loc(bx+bms_l/2-2.5, by, bz)], "bms_caps", C_BLACK, asm)
-
-    # Balance pins
-    x0 = bx - bms_l/2 + 15
-    x1 = bx + bms_l/2 - 15
-    top_pins = [(x0 + (i/S)*(x1-x0) if S > 0 else x0, by+bms_w/2+1.5, bz) for i in range(S+1)]
-    pin = _cyl_y(3, 0.8)
-    _batch(pin, [_loc(*p) for p in top_pins], "bms_pins", C_BRASS, asm)
-
-    # Power ports
-    px = bx - bms_l/2 - 2
-    port = _box(4, 4, 4)
-    _batch(port, [_loc(px, by+15, bz), _loc(px, by, bz), _loc(px, by-15, bz)], "ports", C_BRASS, asm)
-
-    return {
-        "bms_x": bx, "bms_y": by, "bms_l": bms_l, "bms_z": bz,
-        "top_pins": top_pins,
-        "port_c": (bx-bms_l/2-4, by+15, bz),
-        "port_b": (bx-bms_l/2-4, by,    bz),
-        "port_p": (bx-bms_l/2-4, by-15, bz),
-    }
-
-
-# ── Main cables ───────────────────────────────────────────────────────────────
-
-def _build_main_cables(asm, S, P, cell, gap, is_cyl, bms_pos, yCenter, bodyH, startX, startZ, stepX, stepZ):
-    if bms_pos is None:
-        return
-
-    port_c = bms_pos["port_c"]
-    port_b = bms_pos["port_b"]
-    port_p = bms_pos["port_p"]
-    bms_x  = bms_pos["bms_x"]
-    bms_y  = bms_pos["bms_y"]
-    bms_l  = bms_pos["bms_l"]
-    bms_z  = bms_pos["bms_z"]
-    r = 2.5
-
-    if is_cyl:
-        pt    = yCenter + bodyH/2 + 1.2
-        pb    = yCenter - bodyH/2 - 0.6
-        lf    = (S-1) % 2 == 1
-        p_pos = (startX+(S-1)*stepX, pb if lf else pt, 0.0)
-        p_neg = (startX, pb, 0.0)
-    else:
-        term_h = max(8, cell.longueur_mm*0.07)
-        pt    = yCenter + bodyH/2 + term_h + 2.5
-        po    =  cell.largeur_mm * TERM_OFFSET_RATIO
-        no    = -cell.largeur_mm * TERM_OFFSET_RATIO
-        lf    = (S-1) % 2 == 1
-        p_neg = (startX, pt, startZ+no)
-        p_pos = (startX+(S-1)*stepX, pt, startZ+(no if lf else po))
-
-    above = pt + 20
-    rx    = bms_x + bms_l/2 + 12
-    out_l = (rx, bms_y+18, bms_z)
-    out_c = (rx, bms_y-18, bms_z)
-
-    bolt = _cyl_y(6, 4)
-    _batch(bolt, [_loc(*out_l), _loc(*out_c)], "bolts", C_BRASS, asm)
-
-    _polyline_tube([p_pos, (p_pos[0], above, p_pos[2]), (out_l[0], above, out_l[2]), out_l], r, "cable_b+", C_CABLE_RED,   asm)
-    _polyline_tube([p_neg, (p_neg[0], above, p_neg[2]), (port_b[0]+5, above, port_b[2]), (port_b[0]+5, port_b[1]+12, port_b[2]), port_b], r, "cable_b-", C_CABLE_BLACK, asm)
-    _polyline_tube([port_p, (port_p[0]+15, port_p[1], port_p[2]), (out_l[0]-5, port_p[1]+15, out_l[2]), out_l], r, "cable_p-", C_CABLE_ORG, asm)
-    _polyline_tube([port_c, (port_c[0]+15, port_c[1], port_c[2]), (out_c[0]-5, port_c[1]-10, out_c[2]), out_c], r, "cable_c-", C_CABLE_BLUE, asm)

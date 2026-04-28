@@ -168,8 +168,12 @@ function BestMatches({ form, selectedId, onSelectCell }) {
     }
   }
 
+  // Fetch on open and re-fetch whenever constraints change while panel is open
+  useEffect(() => {
+    if (open) fetchMatches()
+  }, [form, open]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleToggle = () => {
-    if (!open) fetchMatches()
     setOpen(v => !v)
   }
 

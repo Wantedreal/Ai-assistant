@@ -1,6 +1,8 @@
 import React from 'react'
 import { useLang, useT } from '../i18n'
 
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
+
 function BoltLogo() {
   return (
     <a href="/" className="logo-lockup" aria-label="Battery Designer — home">
@@ -98,41 +100,43 @@ export default function Header({ onOpenCompare, onOpenHistory, onOpenCatalogue, 
       <nav className="nav-card" role="navigation" aria-label="Main navigation">
         <BoltLogo />
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
-          <ul className="nav-links" role="list">
-            <li>
-              <button className="nav-compare-btn" onClick={onOpenCatalogue} title="Browse and add cells">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
-                  <line x1="8" y1="18" x2="21" y2="18"/>
-                  <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
-                  <line x1="3" y1="18" x2="3.01" y2="18"/>
-                </svg>
-                {t('nav.cells')}
-              </button>
-            </li>
-            <li>
-              <button className="nav-compare-btn" onClick={onOpenCompare} title="Compare 2–3 cells side by side">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="3" y="3" width="7" height="18" rx="1" />
-                  <rect x="14" y="3" width="7" height="18" rx="1" />
-                </svg>
-                {t('nav.compare')}
-              </button>
-            </li>
-            <li style={{ position: 'relative' }}>
-              <button className="nav-history-btn" onClick={onOpenHistory} title="View calculation history">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-                {t('nav.history')}
-                {historyCount > 0 && (
-                  <span className="nav-history-badge">{historyCount}</span>
-                )}
-              </button>
-            </li>
-          </ul>
-          <LangToggle />
+          {!DEMO_MODE && (
+            <ul className="nav-links" role="list">
+              <li>
+                <button className="nav-compare-btn" onClick={onOpenCatalogue} title="Browse and add cells">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+                    <line x1="8" y1="18" x2="21" y2="18"/>
+                    <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
+                    <line x1="3" y1="18" x2="3.01" y2="18"/>
+                  </svg>
+                  {t('nav.cells')}
+                </button>
+              </li>
+              <li>
+                <button className="nav-compare-btn" onClick={onOpenCompare} title="Compare 2–3 cells side by side">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="7" height="18" rx="1" />
+                    <rect x="14" y="3" width="7" height="18" rx="1" />
+                  </svg>
+                  {t('nav.compare')}
+                </button>
+              </li>
+              <li style={{ position: 'relative' }}>
+                <button className="nav-history-btn" onClick={onOpenHistory} title="View calculation history">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  {t('nav.history')}
+                  {historyCount > 0 && (
+                    <span className="nav-history-badge">{historyCount}</span>
+                  )}
+                </button>
+              </li>
+            </ul>
+          )}
+          {!DEMO_MODE && <LangToggle />}
         </div>
       </nav>
     </header>

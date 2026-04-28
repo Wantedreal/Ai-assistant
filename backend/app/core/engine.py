@@ -20,7 +20,6 @@ from app.schemas.battery import (
     ArrayDimensions, ElectricalSummary,
     VerdictEnum, CellRead
 )
-from app.core.bms_spec import compute_bms_spec
 
 
 # ── Phase 2 constants ─────────────────────────────────────────────────────────
@@ -111,9 +110,10 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
 
     # Dimension gonflés = Dim_cellule * (1 + Taux_gonflement/100)
     # DB stores swelling as either decimal fraction (0.08 = 8%) or percentage (8.0 = 8%).
-    # Normalise to percentage before applying, using the > 1.0 threshold to distinguish formats.
+    # Normalise to percentage before applying. Threshold >= 1.0 so that exactly 1.0
+    # is treated as a percentage (1%), not as a fraction (100% — would double dimensions).
     swelling_raw = cell.taux_swelling_pct
-    swelling_pct = swelling_raw if swelling_raw > 1.0 else swelling_raw * 100.0
+    swelling_pct = swelling_raw if swelling_raw >= 1.0 else swelling_raw * 100.0
     swelling_factor = 1.0 + (swelling_pct / 100.0)
 
     # Apply dimensions based on cell type geometry
@@ -275,21 +275,7 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         lifetime_years_high = round(lifetime_years * (1 + _LIFETIME_UNCERTAINTY), 1)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STEP 7 — BMS specification
-    # ══════════════════════════════════════════════════════════════════════════
-    bms = compute_bms_spec(
-        S=S, P=P,
-        chimie=cell.chimie,
-        tension_nominale=cell.tension_nominale,
-        capacite_ah=cell.capacite_ah,
-        courant_max_a=cell.courant_max_a,
-        c_rate_max_charge=cell.c_rate_max_charge,
-        temp_min_c=getattr(cell, 'temp_min_c', None),
-        v_charge_max=getattr(cell, 'v_charge_max', None),
-    )
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # STEP 8 — Build and return result
+    # STEP 7 — Build and return result
     # ══════════════════════════════════════════════════════════════════════════
     return CalculationResult(
         # ── §9.3.2 required fields — spec-exact names ────────────────────────
@@ -338,16 +324,4 @@ def run_engine(req: CalculationRequest, cell: Cellule) -> CalculationResult:
         lifetime_years_low=lifetime_years_low,
         lifetime_years_high=lifetime_years_high,
 
-        # Phase 6 — BMS specification
-        bms_v_min_pack=bms.v_min_pack,
-        bms_v_max_pack=bms.v_max_pack,
-        bms_i_continuous_a=bms.i_continuous_a,
-        bms_i_charge_a=bms.i_charge_a,
-        bms_i_charge_estimated=bms.i_charge_estimated,
-        bms_balance_channels=bms.balance_channels,
-        bms_balance_current_a=bms.balance_current_a,
-        bms_temp_sensors=bms.temp_sensors,
-        bms_charge_cutoff_temp_c=bms.charge_cutoff_temp_c,
-        bms_discharge_cutoff_temp_c=bms.discharge_cutoff_temp_c,
-        bms_suggestion=bms.bms_suggestion,
     )

@@ -116,7 +116,9 @@ electron-builder downloads `winCodeSign` to run `rcedit.exe` (embeds the app ico
 1. Running `electron-builder --win` (ignores the winCodeSign failure — `release/win-unpacked/` is always created before the failure)
 2. Running `--prepackaged` for the NSIS step (skips winCodeSign entirely)
 
-**Permanent fix:** Enable Developer Mode in Windows → Settings → Privacy & Security → For Developers → Developer Mode → On. This grants symlink creation rights, rcedit runs, and the exe gets the BoltLogo icon embedded (visible in Explorer / taskbar).
+**Automatic rcedit step (added to both build scripts):** Both `build-fast.bat` and `build-full.bat` now search for `rcedit-x64.exe` in the electron-builder cache (`%LOCALAPPDATA%\electron-builder\Cache\winCodeSign`) and embed the icon into the exe automatically between the win-unpacked verification and NSIS packaging steps. Requires `setlocal EnableDelayedExpansion` for the `!RCEDIT!` variable to expand inside the `for /f` loop. Icon embedding now works on every build — no Developer Mode required for this step.
+
+**Permanent fix (for 7zip symlinks):** Enable Developer Mode in Windows → Settings → Privacy & Security → For Developers → Developer Mode → On. This grants symlink creation rights so rcedit can be cached by electron-builder without manual intervention.
 
 ## Key API Endpoints
 
@@ -132,6 +134,8 @@ electron-builder downloads `winCodeSign` to run `rcedit.exe` (embeds the app ico
 | POST | `/api/v1/cells/sync` | Re-import from last saved source path (OneDrive sync workflow) |
 | GET | `/api/v1/cells/import/config` | Returns saved source path (used to enable/disable Sync button) |
 | POST | `/api/v1/cells/recommend` | Run engine on all cells, return top 5 ACCEPT + up to 3 near-miss cells |
+| POST | `/api/v1/cells/import/config` | Save a manual source path (with file existence check) |
+| DELETE | `/api/v1/cells/import/config` | Remove saved source path (clears `import_config.json`) |
 
 Swagger UI available at `http://localhost:8000/docs` when backend is running.
 
@@ -240,9 +244,6 @@ See `/reference_3D` for reference images of the target assembly.
 - Prismatic insulation cards (orange Nomex sheets between series groups) — converted to `InstancedMesh`
 - Prismatic side/end compression plates (steel gray) — flush against outermost cells (no phantom gap)
 - Layer toggle UI (`LayerControlPanel.jsx`) — fullscreen only, conditional on cell type
-- BMS (Daly-style): red aluminum heatsink, black endcaps, dynamic S+1 balance pins, B−/C−/P− brass power ports
-- Balance wires: harness-style routing — rise to common Y plane, sweep to BMS front face, fan to individual pins
-- Main cables: B+ red, B− black, P− orange (load), C− blue (charger) with brass bolt terminals
 - Frontend GLB/STL export (`ExportPanel.jsx`): `getExportGroup()` expands `InstancedMesh` for GLTF; `getFlatGroupForSTL()` bakes world transforms for binary STL
 - Code quality fixes: module constants `WALL_MM`, `TERM_OFFSET_RATIO`; removed dead `dimensions_array` param; fixed GPU memory leak on STL export; fixed RAF cleanup in camera preset animation
 - Cell gap (`cell_gap_mm`): lifted to `App.jsx` form state, sent to backend engine (dimensions include (N-1)×gap), shown in ConstraintsForm under Housing dimensions
@@ -253,7 +254,7 @@ See `/reference_3D` for reference images of the target assembly.
 - Verdict moved to `CellActionCard` (`social-card`) as a compact inline colored text line (✓ ACCEPT / ✗ REJECT — reason), shown immediately after Calculate.
 - `projects-card` overflow changed from `hidden` → `overflow-y: auto` so cell selector content scrolls on small windows.
 
-- STEP export (`backend/app/step_export.py`): `POST /api/v1/export/step` — CadQuery parametric STEP of full cell array (cells, terminals, busbars, brackets/insulation cards/side plates). Housing, BMS and cables intentionally excluded from STEP (cleaner for CAD integration). Performance: `Shape.moved()` + `Compound.makeCompound()` pattern — one OCC solid per unique shape, N cheap location-transforms (~60× faster than individual solids). Typical generation time: 1–7 s depending on cell count. Colors embedded as `COLOUR_RGB` in AP214; visible in SolidWorks/CATIA/Fusion 360/FreeCAD.
+- STEP export (`backend/app/step_export.py`): `POST /api/v1/export/step` — CadQuery parametric STEP of full cell array (cells, terminals, busbars, brackets/insulation cards/side plates). Housing excluded (cleaner for CAD integration). Performance: `Shape.moved()` + `Compound.makeCompound()` pattern — one OCC solid per unique shape, N cheap location-transforms (~60× faster than individual solids). Typical generation time: 1–7 s depending on cell count. Colors embedded as `COLOUR_RGB` in AP214; visible in SolidWorks/CATIA/Fusion 360/FreeCAD.
 - STEP button in `ExportPanel.jsx` — enabled after first Calculate (uses `lastPayload` stored in `App.jsx` state, forwarded via `PackViewer3D` → `ExportPanel`). `api.js` has `exportStep(payload)` → `responseType: 'blob'`.
 
 - **Cell schematic** (`frontend/src/components/CellSchematic.jsx`): pure inline SVG, no deps. Renders differently per cell type — Cylindrical (side view + inset top-view circle), Prismatic (isometric 3-face box), Pouch (soft-corner foil with tabs). Dimensions are proportional to real cell data. Positive terminal red, negative blue. Dimension annotation lines included. Empty state shown when no cell selected. Replaces the static `Projectscard.png` image in `CellSelectorCard`.
@@ -262,7 +263,7 @@ See `/reference_3D` for reference images of the target assembly.
 
 - **Phase 1 — Cell Data Model Extension** (`backend/app/models/cellule.py`, `backend/app/schemas/battery.py`, `backend/app/importer.py`): Added 10 nullable columns to `Cellule` ORM and `CellRead` schema — `fabricant`, `chimie`, `cycle_life`, `dod_reference_pct`, `c_rate_max_discharge`, `c_rate_max_charge`, `energie_volumique_wh_l`, `eol_capacity_pct`, `energie_massique_wh_kg`, `cutoff_voltage_v`. Two Alembic migrations applied (`migrations/versions/`). Importer updated to read TUM/ISI extended Excel format (auto-detected via `Product_Number` header) with deduplication (most-filled row wins, tie-break by CycleLife), chemistry normalization (NMC variants → NMC, Ni-Rich → NMC), dod_reference_pct fraction→percentage conversion, and outlier removal (energie_volumique > 800 Wh/L → NULL). Frontend: chemistry pill badge in search dropdown and cell detail, fabricant line in both, phase1 spec row (cycles @ DoD, C-rate, cutoff V), chemistry color badge in CellSchematic SVG. **3 roadmap fields absent from TUM/ISI dataset:** `temp_min_c`, `temp_max_c`, `self_discharge_pct_month` — not added; needed before Phase 2 temperature check and calendar aging sections.
 
-- **Phase 2 — Engine: C-rate Derating + Cycle Life** (`backend/app/core/engine.py`, `backend/app/schemas/battery.py`, `backend/app/pdf.py`, `frontend/src/components/ConstraintsForm.jsx`): Added C-rate derating and lifetime estimation as informational outputs — they do NOT affect the ACCEPT/REJECT verdict. Engine computes `c_rate_actual`, `derating_factor_pct`, `c_effective_ah`, `cycle_life_at_dod`, `lifetime_years`, `lifetime_years_low`, `lifetime_years_high`. PDF gains Section 6 "Performance Estimate" with full Relation/A.N./Result blocks for both sub-sections. `cycles_per_day` lives in `App.jsx` form state (default 1, sent silently to backend) but is **not shown in the UI form** — it is PDF-only. **k constants:** NMC 0.33 (PyBaMM Chen2020 validated), LFP 0.10, NCA 0.40, LTO 0.04, LCO 0.25, unknown 0.20. Formula valid for 20–80% of C_max; `c_rate_warning=True` above 80%. **Aging exponents:** NMC 1.5, LFP 1.8, NCA 1.3, LTO 2.2 (literature values, ±30% uncertainty range shown in report). PyBaMM calibration script at `backend/scripts/calibrate_derating.py`. **3 fields still missing from dataset:** `temp_min_c`, `temp_max_c`, `self_discharge_pct_month` — temperature check and calendar aging deferred. **Discharge curve columns** (`cap_pct_at_0_5c` through `cap_pct_at_5c`) planned for per-cell k fitting once manufacturer datasheets are collected (priority: Kokam 35 cells, Saft 33 cells, LG Chem 12 cells).
+- **Phase 2 — Engine: C-rate Derating + Cycle Life** (`backend/app/core/engine.py`, `backend/app/schemas/battery.py`, `backend/app/pdf.py`, `frontend/src/components/ConstraintsForm.jsx`): Added C-rate derating and lifetime estimation as informational outputs — they do NOT affect the ACCEPT/REJECT verdict. Engine computes `c_rate_actual`, `derating_factor_pct`, `c_effective_ah`, `cycle_life_at_dod`, `lifetime_years`, `lifetime_years_low`, `lifetime_years_high`. PDF gains Section 6 "Performance Estimate" with full Relation/A.N./Result blocks for both sub-sections. `cycles_per_day` lives in `App.jsx` form state (default 1, sent silently to backend) but is **not shown in the UI form** — it is PDF-only. **k constants:** NMC 0.33 (PyBaMM Chen2020 validated), LFP 0.10, NCA 0.40, LTO 0.04, LCO 0.25, unknown 0.20. Formula valid for 20–80% of C_max; `c_rate_warning=True` above 80%. **Aging exponents:** NMC 1.5, LFP 1.8, NCA 1.3, LTO 2.2 (literature values, ±30% uncertainty range shown in report). **3 fields still missing from dataset:** `temp_min_c`, `temp_max_c`, `self_discharge_pct_month` — temperature check and calendar aging deferred. **Discharge curve columns** (`cap_pct_at_0_5c` through `cap_pct_at_5c`) planned for per-cell k fitting once manufacturer datasheets are collected (priority: Kokam 35 cells, Saft 33 cells, LG Chem 12 cells).
 
 - **Phase 3 — Cell Recommender** (`backend/app/core/recommender.py`, `backend/app/schemas/battery.py`, `backend/app/main.py`, `frontend/src/components/CellSelector.jsx`): New endpoint `POST /api/v1/cells/recommend` runs the sizing engine on every cell in the catalogue with the user's exact constraints and returns the cells that fit, ranked by fill ratio. Two tiers of results:
   - **Fitting cells** (blue, up to 5) — ACCEPT verdict, ranked by fill ratio descending. Shows S×P config, fill %, and actual margins L/W/H in mm.
@@ -270,18 +271,13 @@ See `/reference_3D` for reference images of the target assembly.
   - No multi-criteria scoring (energy density, weight, cycle life removed by design — fit is the only criterion).
   - Frontend: collapsible "Best matches" section at top of `CellSelectorCard`, collapsed by default, fetches on open, click any result to select the cell. `RecommendRequest` mirrors `CalculationRequest` (same housing/energy/current/margin/gap/DoD fields, no `cell_id`). `cycles_per_day` passed silently (default 1). `CellMatch` response includes `near_miss` bool, S×P, fill ratio, margins.
 
-- **Phase 5 — AI Chemistry Explainer** (`backend/app/explainer.py`, `frontend/src/components/ExplainerPanel.jsx`, `backend/.env`): OpenRouter API (free tier), 7-model fallback chain (`meta-llama/llama-3.3-70b`, `google/gemma-3-27b`, etc.). Key embedded as `_EMBEDDED_KEY` in `explainer.py` (acceptable for internal tool). System prompt merged into user message for Gemma compatibility (Gemma rejects `system` role). `POST /api/v1/explain` endpoint. Collapsible `ExplainerPanel` below verdict in `CellActionCard`, caches result per calculation via `fetchedForRef`. `max_tokens=800`.
-
-- **Phase 6 — BMS Specification** (`backend/app/core/bms_spec.py`, `backend/app/schemas/battery.py`, `backend/app/core/engine.py`, `frontend/src/components/ResultsPanel.jsx`, `backend/app/pdf.py`): `compute_bms_spec()` called as Step 7 in engine. 11 new fields on `CalculationResult`: `bms_v_min/max_pack` (S × chemistry cutoff), `bms_i_continuous_a` (P × I_max), `bms_i_charge_a` (P × c_rate_max_charge × C, or 0.5C flagged as estimated), `bms_balance_channels` (= S), `bms_balance_current_a` (C × 0.02), `bms_temp_sensors` (⌈S×P/12⌉), `bms_charge_cutoff_temp_c` (hardcoded per chemistry), `bms_discharge_cutoff_temp_c` (cell `temp_min_c`), `bms_suggestion` (lookup table). Chemistry cutoffs: LFP 2.50–3.65 V, NMC 2.80–4.20 V, NCA 3.00–4.20 V, LTO 1.80–2.80 V. `BMSCard` added to `ResultsPanel.jsx` (reuses `.perf-card`). PDF section 5.4 added.
-
-- **Phase 7 — BMS Wiring Topology: SKIPPED** — not needed for a pre-design tool. BMS manufacturer datasheets cover wiring; topology is identical across all S counts.
+- **Phase 5 — AI Chemistry Explainer** (`backend/app/explainer.py`, `backend/.env`): OpenRouter API (free tier), 7-model fallback chain (`meta-llama/llama-3.3-70b`, `google/gemma-3-27b`, etc.). Key embedded as `_EMBEDDED_KEY` in `explainer.py` (acceptable for internal tool). System prompt merged into user message for Gemma compatibility (Gemma rejects `system` role). `POST /api/v1/explain` endpoint. Floating `AIFab` button (bottom-right) opens a popup panel, caches result per calculation via `fetchedForRef`. `max_tokens=800`.
 
 - **3D visual controls + dimension annotations:**
   - `end_plate_thickness_mm` slider (LayerControlPanel + ConstraintsForm) — sent to engine for prismatic `L_raw = S×h + (S−1)×g + 2×ep`; pouch/cylindrical: visual only. Side rail depth fixed at 8 mm (not tied to end plate).
   - Busbar width slider — controls `hBarW` (Z-stretch); `busbarFlatH = 2.5 mm` fixed; never sent to engine.
   - ConstraintsForm hides end plate + busbar rows for cylindrical cells (`isPrismatic` guard on `cell` prop).
   - `buildDimensionAnnotations(housingL, housingW, housingH, result)` — blue module L/l/h lines + amber X and Z margin indicators (Y removed). Lines use `depthTest: false` to render through geometry; labels are `THREE.Sprite` with `CanvasTexture`.
-  - BMS, balance wires, cables removed from 3D scene entirely.
   - `layers` state in `PackViewer3D` uses lazy `useState` initialiser that reads `result?.cell_used?.type_cellule` at mount — fullscreen modal opens with correct layer visibility immediately.
 
 - **PDF report (§4 — opposite-sides dim layout, no overlap):**
@@ -292,6 +288,16 @@ See `/reference_3D` for reference images of the target assembly.
 - **STEP export sync with 3D:** `ep` from request, S+1 insulation cards at 75% height, `railThick = 8` fixed.
 
 - **DB schema fix:** `battery_cells.db` was missing `temp_min_c`, `temp_max_c`, `temp_max_charge_c`, `v_charge_max` columns — added via `ALTER TABLE`. These are imported from the `.xlsx` but were never migrated to the existing DB file.
+
+- **Excel sync fix** (`backend/app/schemas/battery.py`, `backend/app/main.py`, `backend/app/importer.py`, `frontend/src/components/AddCellModal.jsx`): `CellAddResponse(CellRead)` schema extends `CellRead` with `excel_updated: bool` and `excel_warning: Optional[str]`. Previously-silent `except Exception: pass` in the `add_cell` endpoint now logs the error and returns the warning to the frontend. Fixed two missing entries in `_EXT_APPEND_MAP` (`Company` → `fabricant`, `Chemistry_Detail` → `chimie`). Electron 27 lacks `webUtils`; `file.path` fallback used for Electron ≤28. New endpoints: `POST /api/v1/cells/import/config` (saves source path with file existence check), `DELETE /api/v1/cells/import/config` (removes `import_config.json`). `AddCellModal` shows amber warning with manual path input when no source Excel is configured; after `excel_warning` returned, modal stays open with message and a Close button instead of Save.
+
+- **Export persistence** (`frontend/src/App.jsx`, `frontend/src/components/PackViewer3D.jsx`, `frontend/src/components/ExportPanel.jsx`): All GLB/STL/STEP export logic lifted to `App.jsx` level — `exporting` state (null|'glb'|'stl'|'step'), `builderRef = useRef(null)`, `handleExportGLB/STL/STEP` as `useCallback` handlers, `triggerDownload(blob, filename)` with 30 s URL revocation. `ExportPanel.jsx` is now a **pure UI shell** — no state, no axios, no Three.js imports; all logic lives in App. `PackViewer3D` accepts `externalBuilderRef`, `onExportGLB/STL/STEP`, `exporting` props and forwards them to ExportPanel. A spinning toast shows on the home view when an export is in progress and the fullscreen modal is closed.
+
+- **STEP LRU cache** (`backend/app/step_export.py`): Module-level `_CACHE: OrderedDict[str, bytes]` with `_CACHE_MAX = 4`. Key computed via `hashlib` hash of all geometry parameters. Cache hit returns `BytesIO(cached)` immediately without re-running CadQuery. Reduces repeat generation from 1–7 s to instant for identical configurations.
+
+- **App icon — Battery designer** (`frontend/public/`, `frontend/build/`, `frontend/dist/`): All icon files replaced with "Battery designer.png" resized to 512×512 via Pillow. Manually built multi-size ICO (16/32/48/64/128/256 px, PNG-compressed Vista-format frames, 82 KB). SVG wraps PNG as base64 `<image>` element. `Header.jsx` BoltLogo SVG retained (user explicitly kept original). Files updated: `public/icon.{png,ico,svg}`, `build/icon.{png,ico}`, `dist/icon.{png,ico,svg}`.
+
+- **Build script rcedit auto-embed** (`build-fast.bat`, `build-full.bat`): Both scripts now search `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign` for `rcedit-x64.exe` using `where /r` and embed the icon into the packaged exe before the NSIS step. `setlocal EnableDelayedExpansion` added at the top of both files to allow `!RCEDIT!` variable expansion inside the `for /f` loop. Icon is now embedded on every build without Developer Mode.
 
 **uncompleted:**
 - **EVA foam / heat shrink** — insulation wrap over cell array (cylindrical and prismatic)
@@ -369,6 +375,15 @@ The bottom row (`bottom-row`) is a flex row with `align-items: stretch`. Cards i
 - 63-test pytest suite covering all endpoints, engine algorithm, swelling, geometry, manual mode, PDF, and input validation.
 - Run: `cd backend && venv/Scripts/python.exe -m pytest tests/test_suite.py -v`
 
+- **Code quality pass (2026-04-27):** 7 bugs fixed, 22+ dead/dev files removed, all 63 tests passing.
+  - `engine.py`: swelling threshold `> 1.0` → `>= 1.0` (boundary case: value exactly 1.0 was misread as fraction, doubling dimensions)
+  - `schemas/battery.py`: `gt=0` → `ge=0` on `total_energy_wh`, `usable_energy_wh`, `total_weight_kg` (zero-capacity cell caused `ValidationError` crash)
+  - `main.py`: added `ValidationError` to `except` in `/calculate`, `/calculate/pdf`, `/export/step`; added source_path `.xlsx` extension + file existence checks in import endpoint; `db.close()` before AI call in `/explain` to avoid holding session for up to 210 s
+  - `PackAssemblyBuilder.js`: `_disposeGroup` now calls `m.map.dispose()` before `m.dispose()` (GPU `CanvasTexture` leak on every scene rebuild)
+  - `CellSelector.jsx`: BestMatches re-fetch moved to `useEffect([form, open])` (was stale after constraint change)
+  - Removed: `bms_spec.py`, `ExplainerPanel.jsx`, `routers/cellules.py`, `schemas/cellule.py`, `calibrate_derating.py`, `PackPreview.jsx`, `generate-icon.cjs`, `test.txt`, `index.html.old`, `test_report.pdf`, two Jupyter notebooks, two legacy import scripts, two test Excel files, `database_folder/`, `ref_3D/`, `backend/app/routers/`, `backend/scripts/`, `frontend/scripts/`
+  - `step_export.py`: removed dead `_build_bms()` and `_build_main_cables()` functions and 4 unused cable color constants
+
 ### Distribution
 
 Copy `frontend/release/Battery Pack Designer Setup 1.0.0.exe` to target machine (USB, file share, etc.). Double-click to install — no Python or Node.js required. If Windows SmartScreen blocks it: "More info" → "Run anyway" (unsigned app warning, normal for internal tools).
@@ -376,4 +391,4 @@ Copy `frontend/release/Battery Pack Designer Setup 1.0.0.exe` to target machine 
 If the app fails on a very old machine: install [VC++ 2015-2022 Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) (required by Python 3.13, usually pre-installed on Windows 10/11).
 
 ## Your task
-I want you now to review the code I already make a graph to explain for you the structure and content of the code , and we will work on the step exportation, the problem is it doesn"t really export xhat we are seeing especially on the prismatic cells I don't see the terminals the busbars really etc
+I want you now to review the code I already make a graph to explain for you the structure and content of the code , I want to show my department team the etat d'avancement but I don't want to show them all those functionalities what I want is to hide the all cells and add one in the ui , also the cell compare historique and the ai analysis 

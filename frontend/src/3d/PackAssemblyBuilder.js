@@ -1946,8 +1946,12 @@ export class PackAssemblyBuilder {
     group.traverse(obj => {
       if (obj.geometry) obj.geometry.dispose()
       if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose())
-        else obj.material.dispose()
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+        mats.forEach(m => {
+          // Dispose texture maps (e.g. CanvasTexture on dimension label sprites)
+          if (m.map) m.map.dispose()
+          m.dispose()
+        })
       }
     })
   }

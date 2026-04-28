@@ -478,8 +478,10 @@ class TestEngineSwelling:
         """Prismatic: swelling on X (hauteur_mm) and Z (largeur_mm), not Y (longueur_mm)."""
         cell = make_prismatic_cell(hauteur_mm=7.3, largeur_mm=148.0,
                                    longueur_mm=200.0, taux_swelling_pct=2.0)
+        # end_plate_thickness_mm=0 isolates swelling effect from end-plate contribution
         req = make_request(tension_cible_v=3.7, energie_cible_wh=None, courant_cible_a=50.0,
-                           housing_l=5000.0, housing_l_small=5000.0, housing_h=500.0)
+                           housing_l=5000.0, housing_l_small=5000.0, housing_h=500.0,
+                           end_plate_thickness_mm=0.0)
         result = run_engine(req, cell)
         S, P = result.nb_serie, result.nb_parallele
         # swelling_factor = 1.02 (2% stored as percentage)
@@ -568,15 +570,13 @@ class TestEngineManualMode:
         assert result.nb_serie == 7
         assert result.nb_parallele == 4
 
-    def test_manual_defaults_to_1_when_none(self):
-        """If manual_series/parallel are None, engine defaults to 1."""
-        cell = make_cylindrical_cell()
-        req = make_request(config_mode=ConfigModeEnum.MANUAL,
-                           manual_series=None, manual_parallel=None,
-                           housing_l=5000.0, housing_l_small=5000.0, housing_h=500.0)
-        result = run_engine(req, cell)
-        assert result.nb_serie == 1
-        assert result.nb_parallele == 1
+    def test_manual_requires_series_and_parallel(self):
+        """Manual mode must reject requests where series/parallel are not provided."""
+        from pydantic import ValidationError as PydanticValidationError
+        with pytest.raises(PydanticValidationError):
+            make_request(config_mode=ConfigModeEnum.MANUAL,
+                         manual_series=None, manual_parallel=None,
+                         housing_l=5000.0, housing_l_small=5000.0, housing_h=500.0)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

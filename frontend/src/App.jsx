@@ -33,6 +33,8 @@ const toOptNum = (v) => {
   return isNaN(n) ? undefined : n
 }
 
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   return <LanguageProvider><AppInner /></LanguageProvider>
@@ -547,7 +549,7 @@ function AppInner() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
 
-    <AIFab cell={cell} form={form} result={result} />
+    {!DEMO_MODE && <AIFab cell={cell} form={form} result={result} />}
 
     {compareOpen && (
       <ComparePanel

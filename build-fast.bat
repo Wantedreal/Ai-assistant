@@ -1,4 +1,5 @@
 @echo off
+setlocal EnableDelayedExpansion
 title Battery Pack Designer — Frontend Build
 color 0B
 echo.
@@ -36,6 +37,16 @@ if not exist "release\win-unpacked\Battery Pack Designer.exe" (
     echo  ERROR: Electron packaging failed — app exe not found in win-unpacked.
     pause
     exit /b 1
+)
+
+:: Embed the app icon into the exe using rcedit (bypasses winCodeSign symlink issue)
+:: This ensures the icon appears correctly on every target PC without Developer Mode
+for /f "delims=" %%R in ('where /r "%LOCALAPPDATA%\electron-builder\Cache\winCodeSign" rcedit-x64.exe 2^>nul') do set RCEDIT=%%R
+if defined RCEDIT (
+    echo  [icon] Embedding icon via rcedit...
+    "!RCEDIT!" "release\win-unpacked\Battery Pack Designer.exe" --set-icon "build\icon.ico"
+) else (
+    echo  [icon] rcedit not found in cache — icon will not be embedded. Run once with Developer Mode enabled to cache it.
 )
 
 :: Create NSIS installer from the packaged directory — does not need winCodeSign

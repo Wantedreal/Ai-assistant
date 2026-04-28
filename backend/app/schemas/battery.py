@@ -29,9 +29,9 @@ class ElectricalSummary(BaseModel):
     """Electrical specifications of the pack"""
     actual_voltage_v: float = Field(..., gt=0, description="Actual voltage in V")
     actual_capacity_ah: float = Field(..., gt=0, description="Actual capacity in Ah")
-    total_energy_wh: float = Field(..., gt=0, description="Total energy in Wh")
-    usable_energy_wh: float = Field(..., gt=0, description="Usable energy in Wh (with DoD)")
-    total_weight_kg: float = Field(..., gt=0, description="Total weight in kg")
+    total_energy_wh: float = Field(..., ge=0, description="Total energy in Wh")
+    usable_energy_wh: float = Field(..., ge=0, description="Usable energy in Wh (with DoD)")
+    total_weight_kg: float = Field(..., ge=0, description="Total weight in kg")
     energy_density_wh_kg: float = Field(..., ge=0, description="Energy density in Wh/kg")
 
 
@@ -153,18 +153,6 @@ class CalculationResult(BaseModel):
     lifetime_years_low:  Optional[float] = Field(None, description="Pessimistic lifetime bound (−30%)")
     lifetime_years_high: Optional[float] = Field(None, description="Optimistic lifetime bound (+30%)")
 
-    # Phase 6 — BMS specification (informational)
-    bms_v_min_pack:           Optional[float] = Field(None, description="Pack minimum voltage (V)")
-    bms_v_max_pack:           Optional[float] = Field(None, description="Pack maximum voltage (V)")
-    bms_i_continuous_a:       Optional[float] = Field(None, description="Continuous discharge current (A)")
-    bms_i_charge_a:           Optional[float] = Field(None, description="Max charge current (A)")
-    bms_i_charge_estimated:   Optional[bool]  = Field(None, description="True if charge current used default 0.5C")
-    bms_balance_channels:     Optional[int]   = Field(None, description="Number of balance channels (= S)")
-    bms_balance_current_a:    Optional[float] = Field(None, description="Balance current per channel (A)")
-    bms_temp_sensors:         Optional[int]   = Field(None, description="Recommended temperature sensor count")
-    bms_charge_cutoff_temp_c: Optional[int]   = Field(None, description="Min charge temperature (°C)")
-    bms_discharge_cutoff_temp_c: Optional[float] = Field(None, description="Min discharge temperature (°C)")
-    bms_suggestion:           Optional[str]   = Field(None, description="Suggested BMS product family")
 
 
 # ── Phase 3 — Cell Recommender ────────────────────────────────────────────────

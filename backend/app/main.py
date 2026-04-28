@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
+from pydantic import ValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -81,12 +82,14 @@ S/P (Série/Parallèle) et la vérification géométrique de packs batteries.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",   # Vite dev server
+        "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:80",
     ],
+    # Covers any port Vite auto-selects (5174, 5175, ...) and Electron file:// origin
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -199,7 +202,7 @@ def calculate_pack(
     # Execute the deterministic core engine
     try:
         result = run_engine(req, cell)
-    except ValueError as exc:
+    except (ValueError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
     # Auto-save to history
@@ -261,7 +264,7 @@ def generate_report_pdf(
     # Execute the calculation
     try:
         result = run_engine(req, cell)
-    except ValueError as exc:
+    except (ValueError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
     # Generate PDF in memory
@@ -305,7 +308,7 @@ def export_step(
 
     try:
         result = run_engine(req, cell)
-    except ValueError as exc:
+    except (ValueError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
     step_buf = generate_step_file(req, result, cell)
@@ -443,6 +446,11 @@ async def import_cells(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if source_path:
+        source_path = source_path.strip()
+        if not source_path.lower().endswith(".xlsx"):
+            raise HTTPException(status_code=422, detail="source_path must point to an .xlsx file")
+        if not Path(source_path).exists():
+            raise HTTPException(status_code=422, detail=f"source_path not found: {source_path}")
         save_source_path(source_path)
     return {"imported": count, "source_path": source_path}
 
@@ -539,12 +547,21 @@ def explain_result(
     if not cell:
         raise HTTPException(status_code=404, detail=f"Cell id={req.cell_id} not found.")
 
+    # Extract all needed fields and release the DB connection before the
+    # potentially long (up to 210 s) AI call chain.
+    cell_nom = cell.nom
+    chimie = cell.chimie
+    capacite_ah = cell.capacite_ah
+    tension_nominale = cell.tension_nominale
+    courant_max_a = cell.courant_max_a
+    db.close()
+
     prompt_text = build_user_prompt(
-        cell_nom=cell.nom,
-        chimie=cell.chimie,
-        capacite_ah=cell.capacite_ah,
-        tension_nominale=cell.tension_nominale,
-        courant_max_a=cell.courant_max_a,
+        cell_nom=cell_nom,
+        chimie=chimie,
+        capacite_ah=capacite_ah,
+        tension_nominale=tension_nominale,
+        courant_max_a=courant_max_a,
         energie_cible_wh=req.energie_cible_wh,
         tension_cible_v=req.tension_cible_v,
         courant_cible_a=req.courant_cible_a,
