@@ -230,6 +230,7 @@ def _import_extended(ws, db: Session) -> int:
                 temp_max_c         = _to_float(row[idx["Temp_Max_C"]]) if "Temp_Max_C" in idx else None,
                 temp_max_charge_c  = _to_float(row[idx["Temp_Max_Charge_C"]]) if "Temp_Max_Charge_C" in idx else None,
                 v_charge_max       = _to_float(row[idx["VCharge_Max_V"]]) if "VCharge_Max_V" in idx else None,
+                prix_usd           = _to_float(row[idx["Price_USD"]]) if "Price_USD" in idx else None,
             ))
             count += 1
 
@@ -262,10 +263,15 @@ def _import_legacy(ws, db: Session) -> int:
             if all(v is None for v in row):
                 continue
             cell_type = str(_get(row, "type_cellule"))
+            # For cylindrical cells: diameter_mm is the authoritative source.
+            # longueur_mm and largeur_mm may be blank — fall back to diameter_mm.
+            dia = _to_float(_get(row, "diameter_mm")) if cell_type == "Cylindrical" else None
+            lon = _to_float(_get(row, "longueur_mm")) or (dia or 0.0)
+            lar = _to_float(_get(row, "largeur_mm"))  or (dia or 0.0)
             db.add(Cellule(
                 nom               = str(_get(row, "nom")),
-                longueur_mm       = _to_float(_get(row, "longueur_mm")) or 0.0,
-                largeur_mm        = _to_float(_get(row, "largeur_mm"))  or 0.0,
+                longueur_mm       = lon,
+                largeur_mm        = lar,
                 hauteur_mm        = _to_float(_get(row, "hauteur_mm"))  or 0.0,
                 masse_g           = _to_float(_get(row, "masse_g"))     or 0.0,
                 tension_nominale  = _to_float(_get(row, "tension_nominale")) or 0.0,
@@ -273,8 +279,7 @@ def _import_legacy(ws, db: Session) -> int:
                 courant_max_a     = _to_float(_get(row, "courant_max_a")) or 0.0,
                 type_cellule      = cell_type,
                 taux_swelling_pct = _to_float(_get(row, "taux_swelling_pct")) or 0.0,
-                # Cylindrical: longueur_mm holds the diameter value
-                diameter_mm       = _to_float(_get(row, "longueur_mm")) if cell_type == "Cylindrical" else None,
+                diameter_mm       = dia,
                 # Extended fields — all present in battery_cells_curated.xlsx
                 fabricant            = str(_get(row, "fabricant")).strip() if not _is_null(_get(row, "fabricant")) else None,
                 chimie               = str(_get(row, "chimie")).strip()    if not _is_null(_get(row, "chimie"))    else None,
@@ -288,6 +293,7 @@ def _import_legacy(ws, db: Session) -> int:
                 temp_min_c           = _to_float(_get(row, "temp_min_c")),
                 temp_max_c           = _to_float(_get(row, "temp_max_c")),
                 temp_max_charge_c    = _to_float(_get(row, "temp_max_charge_c")),
+                prix_usd             = _to_float(_get(row, "prix_usd")),
             ))
             count += 1
 
@@ -325,6 +331,7 @@ _LEGACY_HEADERS = [
     "cycle_life", "dod_reference_pct", "c_rate_max_discharge",
     "c_rate_max_charge", "eol_capacity_pct", "cutoff_voltage_v",
     "temp_min_c", "temp_max_c", "temp_max_charge_c", "v_charge_max",
+    "prix_usd",
 ]
 
 # Extended-format column → cell dict key mapping for appending
@@ -351,6 +358,7 @@ _EXT_APPEND_MAP = {
     "Temp_Max_C":               "temp_max_c",
     "Temp_Max_Charge_C":        "temp_max_charge_c",
     "VCharge_Max_V":            "v_charge_max",
+    "Price_USD":                "prix_usd",
 }
 
 

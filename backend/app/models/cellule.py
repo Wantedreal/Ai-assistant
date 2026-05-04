@@ -40,6 +40,7 @@ class Cellule(Base):
     temp_max_c           = Column(Float,       nullable=True)   # max discharge temperature (°C)
     temp_max_charge_c    = Column(Float,       nullable=True)   # max charge temperature (°C)
     v_charge_max         = Column(Float,       nullable=True)   # charge cutoff voltage (V)
+    prix_usd             = Column(Float,       nullable=True)   # unit price in USD (optional)
 
     def __repr__(self) -> str:
         return (

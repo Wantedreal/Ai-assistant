@@ -46,6 +46,8 @@ const SPEC_DEFS = [
       return `${pct.toFixed(1)} %`
     },
   },
+  { key: 'price', labelKey: 'spec.price', num: c => c.prix_usd, compare: 'lower',
+    extract: c => c.prix_usd != null ? `$${Number(c.prix_usd).toFixed(2)} / cell` : '—' },
 ]
 
 // ─── Single cell slot ─────────────────────────────────────────────────────────

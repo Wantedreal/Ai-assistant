@@ -162,6 +162,7 @@ const T = {
     'spec.cutoff':        'Cutoff voltage',
     'spec.temp_range':    'Temp range',
     'spec.swelling':      'Swelling',
+    'spec.price':         'Price (USD)',
 
     // HistoryPanel
     'history.title':     'Calculation History',
@@ -236,6 +237,8 @@ const T = {
     'add_cell.f.temp_max':     'Temp max (°C)',
     'add_cell.f.temp_charge':  'Max charge T (°C)',
     'add_cell.f.v_charge':     'Max charge V',
+    'add_cell.f.price':        'Price (USD)',
+    'add_cell.f.price_hint':   'Unit price per cell',
 
     // App loading / error
     'app.loading': 'Loading cell catalogue…',
@@ -403,6 +406,7 @@ const T = {
     'spec.cutoff':        'Tension de coupure',
     'spec.temp_range':    'Plage de température',
     'spec.swelling':      'Gonflement',
+    'spec.price':         'Prix (USD)',
 
     // HistoryPanel
     'history.title':     'Historique des calculs',
@@ -477,6 +481,8 @@ const T = {
     'add_cell.f.temp_max':     'Temp max (°C)',
     'add_cell.f.temp_charge':  'T° charge max (°C)',
     'add_cell.f.v_charge':     'Tension charge max',
+    'add_cell.f.price':        'Prix (USD)',
+    'add_cell.f.price_hint':   'Prix unitaire par cellule',
 
     // App loading / error
     'app.loading': 'Chargement du catalogue de cellules…',

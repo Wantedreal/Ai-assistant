@@ -39,7 +39,13 @@ from app.schemas.battery import (
 from app.core.engine import run_engine
 from app.core.recommender import recommend_cells
 from app.pdf import generate_pdf_report
-from app.step_export import generate_step_file
+try:
+    from app.step_export import generate_step_file as _generate_step_file
+    _STEP_EXPORT_OK = True
+except Exception as _step_import_err:
+    logging.warning("CadQuery not available — STEP export disabled: %s", _step_import_err)
+    _generate_step_file = None
+    _STEP_EXPORT_OK = False
 from app.importer import import_from_bytes, import_from_path, get_source_path, save_source_path, append_to_source_excel
 from app.explainer import build_user_prompt, explain as ai_explain
 
@@ -299,6 +305,12 @@ def export_step(
     busbars, brackets / insulation cards / side plates, BMS, balance wires
     and main cables. Importable into SolidWorks, CATIA, Fusion 360, FreeCAD.
     """
+    if not _STEP_EXPORT_OK:
+        raise HTTPException(
+            status_code=503,
+            detail="STEP export is not available in this build (CadQuery could not be loaded)."
+        )
+
     cell = db.query(Cellule).filter(Cellule.id == req.cell_id).first()
     if not cell:
         raise HTTPException(
@@ -311,7 +323,7 @@ def export_step(
     except (ValueError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    step_buf = generate_step_file(req, result, cell)
+    step_buf = _generate_step_file(req, result, cell)
 
     return StreamingResponse(
         step_buf,
@@ -360,6 +372,7 @@ def add_cell(req: CellCreate, db: Session = Depends(get_db)):
         temp_max_c=req.temp_max_c,
         temp_max_charge_c=req.temp_max_charge_c,
         v_charge_max=req.v_charge_max,
+        prix_usd=req.prix_usd,
     )
     db.add(cell)
     db.commit()

@@ -63,6 +63,7 @@ class CellRead(BaseModel):
     temp_max_c:          Optional[float] = None
     temp_max_charge_c:   Optional[float] = None
     v_charge_max:        Optional[float] = None
+    prix_usd:            Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -284,6 +285,7 @@ class CellCreate(BaseModel):
     temp_max_c:           Optional[float] = None
     temp_max_charge_c:    Optional[float] = None
     v_charge_max:         Optional[float] = None
+    prix_usd:             Optional[float] = None
 
 
 class CellAddResponse(CellRead):

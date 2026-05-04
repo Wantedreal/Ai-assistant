@@ -16,6 +16,7 @@ const EMPTY = {
   c_rate_max_discharge: '', c_rate_max_charge: '',
   eol_capacity_pct: '', cutoff_voltage_v: '',
   temp_min_c: '', temp_max_c: '', temp_max_charge_c: '', v_charge_max: '',
+  prix_usd: '',
 }
 
 function Field({ label, required, children, hint }) {
@@ -152,6 +153,7 @@ export default function AddCellModal({ onClose, onAdded, onReloadCells }) {
         temp_max_c:           toNum(form.temp_max_c),
         temp_max_charge_c:    toNum(form.temp_max_charge_c),
         v_charge_max:         toNum(form.v_charge_max),
+        prix_usd:             toNum(form.prix_usd),
       }
       const { data } = await apiService.addCell(payload)
       onAdded?.(data)
@@ -393,6 +395,10 @@ export default function AddCellModal({ onClose, onAdded, onReloadCells }) {
                 <Field label={t('add_cell.f.v_charge')}>
                   <input type="number" step="0.01" className="add-cell__input" placeholder="3.65"
                     value={form.v_charge_max} onChange={e => set('v_charge_max', e.target.value)} />
+                </Field>
+                <Field label={t('add_cell.f.price')} hint={t('add_cell.f.price_hint')}>
+                  <input type="number" step="0.01" min="0" className="add-cell__input" placeholder="12.50"
+                    value={form.prix_usd} onChange={e => set('prix_usd', e.target.value)} />
                 </Field>
               </div>
             </>

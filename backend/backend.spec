@@ -11,15 +11,33 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 # reportlab bundles fonts and other binary data that PyInstaller misses
 reportlab_datas, reportlab_binaries, reportlab_hidden = collect_all('reportlab')
 
+# CadQuery (STEP export) — includes the OCP/OpenCascade C++ bindings (~200–500 MB)
+cq_datas, cq_binaries, cq_hidden = collect_all('cadquery')
+ocp_datas, ocp_binaries, ocp_hidden = collect_all('OCP')
+
+# openpyxl — has XML schema data files PyInstaller misses via static analysis
+openpyxl_datas, openpyxl_binaries, openpyxl_hidden = collect_all('openpyxl')
+
 a = Analysis(
     ['run.py'],
     pathex=['.'],
-    binaries=reportlab_binaries,
+    binaries=[
+        *reportlab_binaries,
+        *cq_binaries,
+        *ocp_binaries,
+        *openpyxl_binaries,
+    ],
     datas=[
-        # The SQLite database with all 384 battery cells
+        # The SQLite database with all 384 battery cells (seed — copied to userData on first run)
         ('data', 'data'),
         # reportlab fonts, images, etc.
         *reportlab_datas,
+        # CadQuery data files
+        *cq_datas,
+        # OCP/OpenCascade data files
+        *ocp_datas,
+        # openpyxl XML schemas and templates
+        *openpyxl_datas,
     ],
     hiddenimports=[
         # uvicorn dynamically imports its event loop and protocol backends
@@ -49,7 +67,16 @@ a = Analysis(
         'email.mime.text',
         'email.mime.multipart',
         'email.mime.base',
+        # httpx — used by the AI chemistry explainer
+        'httpx',
+        'httpx._transports.default',
+        'httpx._transports.asgi',
+        'httpx._client',
+        # collected hidden imports from each library
         *reportlab_hidden,
+        *cq_hidden,
+        *ocp_hidden,
+        *openpyxl_hidden,
     ],
     hookspath=[],
     hooksconfig={},

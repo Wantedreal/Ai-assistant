@@ -6,8 +6,9 @@ from app.db.database import Base
 
 class CalculationHistory(Base):
     __tablename__ = "calculation_history"
+    __table_args__ = {"sqlite_autoincrement": True}
 
-    id           = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id           = Column(Integer, primary_key=True, index=True)
     timestamp    = Column(DateTime, nullable=False, default=datetime.utcnow)
     cell_id      = Column(Integer, nullable=False)
     cell_nom     = Column(String(100), nullable=False)

@@ -92,6 +92,11 @@ async function startBackend() {
     detached: false,
     stdio: 'pipe',
     cwd: path.dirname(binaryPath),  // run from its own dir so _internal/ is found
+    env: {
+      ...process.env,
+      // Tell the backend where to store the writable DB and config (persistent across restarts).
+      BATTERY_PACK_USER_DATA: app.getPath('userData'),
+    },
   })
 
   backendProcess.stdout?.on('data', (data) => {
