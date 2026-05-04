@@ -38,7 +38,7 @@ export class PackAssemblyBuilder {
   }
 
   setEndPlateThickness(mm) { this.endPlateThick = mm }
-  setBusbarThickness(mm)   { this.busbarThick   = mm }
+  setBusbarLength(mm)      { this.busbarLength = mm }
 
   /** Provide a pre-loaded GLTF object (from GLTFLoader) for mesh-based cylindrical cells. */
   setCellModel(gltf) {
@@ -1006,9 +1006,8 @@ export class PackAssemblyBuilder {
 
     const yCenter = (-housingH / 2) + WALL_MM + bodyH / 2
     const busbarFlatH = 2.5                      // fixed copper strip Y-thickness (mm)
-    const termYLocal  = yCenter + bodyH / 2 + 2
-    const termBaseTop = termYLocal + 2.8
-    const busbarY     = termBaseTop + 0.5 + busbarFlatH / 2
+    // Busbar sits directly on the 1.5mm flat pads (matching STEP export)
+    const busbarY     = yCenter + bodyH / 2 + 1.5 + busbarFlatH / 2
 
     // Neutral grey — brushed aluminium / steel busbar
     const copperMat = this.isElectron
@@ -1021,11 +1020,12 @@ export class PackAssemblyBuilder {
     const startX = -(S * stepX) / 2 + stepX / 2
     const startZ = -(P * stepZ) / 2 + stepZ / 2
 
-    // hBarW: Z-width (stretch) controlled by busbarThick; minimum covers neg→pos terminal span
-    const minHBarW = posOffZ * 2 + termRadius * 2
-    const hBarW = Math.max(minHBarW, this.busbarThick)  // user stretches the bar width in Z
-    const hBarX = stepX + termRadius * 2                // X span — bridges two terminal centres
-    const vBarW = termRadius * 2 + 2                    // X width of row-transition bars
+    // Busbar Z-width: just wide enough to cover a terminal pad + small overhang
+    const termLenZ = Math.min(sizeZ * 0.2, 40.0)
+    const minHBarX = stepX + termLenZ               // minimum X span bridges two terminal pads
+    const hBarX = Math.max(minHBarX, this.busbarLength || 0) // user stretches the bar length in X
+    const hBarW = termLenZ + 4          // terminal pad width + 2mm overhang each side
+    const vBarW = termLenZ + 2          // transition bars slightly narrower
 
     // Snake path: within each parallel row, bars go alternately R→L / L→R.
     // A single vertical bar at each row-transition edge creates one Pack+ and one Pack-.
@@ -1121,10 +1121,11 @@ export class PackAssemblyBuilder {
 
     // Terminal base radius (same formula as _buildPrismaticCells)
     const termRadius = Math.min(sizeX * 0.32, sizeZ * 0.12, 7)
-    // Bar dimensions: X = series pitch + terminal overhang; Z = user-controlled stretch width
-    const hBarX     = stepX + termRadius * 2
-    const minHBarW  = termRadius * 2 + 2
-    const hBarW     = Math.max(minHBarW, this.busbarThick)  // Z stretch controlled by slider
+    // Bar dimensions: minimum X = series pitch + terminal overhang
+    const minHBarX  = stepX + termRadius * 2
+    const hBarX     = Math.max(minHBarX, this.busbarLength || 0)  // X stretch controlled by slider
+    const termLenZ = Math.min(sizeZ * 0.2, 40.0)
+    const hBarW     = termLenZ + 4                                         // terminal pad width + overhang
     const targetX   = hBarX
     const targetY   = busbarFlatH
     const targetZ   = hBarW
@@ -1562,6 +1563,10 @@ export class PackAssemblyBuilder {
     const yCenter    = (-housingH / 2) + WALL_MM + bodyH / 2
 
     const endThick = this.endPlateThick
+    if (endThick <= 0) {
+      this._addGroup('end_plates', new THREE.Group())
+      return
+    }
     const plateMat = new THREE.MeshStandardMaterial({
       color: '#1a1a1a', metalness: 0.55, roughness: 0.5, side: THREE.DoubleSide,
     })

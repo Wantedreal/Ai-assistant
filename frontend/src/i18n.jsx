@@ -27,7 +27,7 @@ const T = {
     'layer.settings':     'Settings',
     'layer.cell_gap':     'Cell Gap',
     'layer.end_plate':    'End Plate',
-    'layer.busbar_width': 'Busbar Width',
+    'layer.busbar_width': 'Busbar Length',
 
     // ConstraintsForm
     'form.title':        'Constraints',
@@ -43,7 +43,8 @@ const T = {
     'form.margin':       'Margin',
     'form.cell_gap':     'Cell gap',
     'form.end_plate':    'End plate',
-    'form.busbar_width': 'Busbar width',
+    'form.busbar_width': 'Busbar length',
+    'form.busbar_length': 'Busbar length',
     'form.config_mode':  'Configuration mode',
     'form.mode_auto':    'Auto',
     'form.mode_manual':  'Manual',
@@ -267,7 +268,7 @@ const T = {
     'layer.settings':     'Paramètres',
     'layer.cell_gap':     'Jeu entre cellules',
     'layer.end_plate':    'Plaque terminale',
-    'layer.busbar_width': 'Largeur barre',
+    'layer.busbar_width': 'Long. barre',
 
     // ConstraintsForm
     'form.title':        'Contraintes',
@@ -283,7 +284,8 @@ const T = {
     'form.margin':       'Marge',
     'form.cell_gap':     'Jeu cellules',
     'form.end_plate':    'Plaque fin',
-    'form.busbar_width': 'Larg. busbar',
+    'form.busbar_width': 'Long. busbar',
+    'form.busbar_length': 'Long. busbar',
     'form.config_mode':  'Mode de configuration',
     'form.mode_auto':    'Auto',
     'form.mode_manual':  'Manuel',

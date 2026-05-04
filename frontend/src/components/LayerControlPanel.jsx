@@ -16,7 +16,6 @@ const LAYER_GROUPS = [
     categoryKey: 'layer.cat.electrical',
     items: [
       { name: 'cells',     labelKey: 'layer.cells',     types: ['cylindrical', 'prismatic', 'pouch'] },
-      { name: 'terminals', labelKey: 'layer.terminals', types: ['cylindrical', 'prismatic', 'pouch'] },
       { name: 'busbars',   labelKey: 'layer.busbars',   types: ['cylindrical', 'prismatic', 'pouch'] },
     ],
   },
@@ -39,7 +38,7 @@ const sectionLabel = {
   textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6,
 }
 
-export default function LayerControlPanel({ layers, onToggle, cellType, cellGap, onCellGapChange, endPlateThickness, onEndPlateChange, busbarHeight, onBusbarHeightChange }) {
+export default function LayerControlPanel({ layers, onToggle, cellType, cellGap, onCellGapChange, endPlateThickness, onEndPlateChange, busbarLength, onBusbarLengthChange }) {
   const t = useT()
   const type = (cellType || '').toLowerCase()
   const allNames = Object.keys(layers)
@@ -155,18 +154,18 @@ export default function LayerControlPanel({ layers, onToggle, cellType, cellGap,
             </div>
           )}
 
-          {isPrismatic && onBusbarHeightChange && (
+          {isPrismatic && onBusbarLengthChange && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span>{t('layer.busbar_width')}</span>
-                <span style={{ color: '#3b82f6', fontWeight: 600 }}>{busbarHeight.toFixed(0)} mm</span>
+                <span>Busbar Length</span>
+                <span style={{ color: '#3b82f6', fontWeight: 600 }}>{busbarLength.toFixed(0)} mm</span>
               </div>
-              <input type="range" min="5" max="60" step="1" value={busbarHeight}
-                onChange={e => onBusbarHeightChange(parseFloat(e.target.value))}
+              <input type="range" min="10" max="150" step="1" value={busbarLength}
+                onChange={e => onBusbarLengthChange(parseFloat(e.target.value))}
                 style={{ width: '100%', height: 4, cursor: 'pointer', accentColor: '#3b82f6' }}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.58rem', color: '#475569', marginTop: 2 }}>
-                <span>5 mm</span><span>60 mm</span>
+                <span>10 mm</span><span>150 mm</span>
               </div>
             </div>
           )}

@@ -362,8 +362,8 @@ function AppInner() {
                   onCellGapChange={v => handleFieldChange('cell_gap_mm', v)}
                   endPlateThickness={toNum(form.end_plate_thickness_mm, 10)}
                   onEndPlateChange={v => handleFieldChange('end_plate_thickness_mm', v)}
-                  busbarThickness={toNum(form.busbar_thickness_mm, 1)}
-                  onBusbarHeightChange={v => handleFieldChange('busbar_thickness_mm', v)}
+                  busbarLength={toNum(form.busbar_thickness_mm, 10)}
+                  onBusbarLengthChange={v => handleFieldChange('busbar_thickness_mm', v)}
                   stepPayload={lastPayload}
                 />
               </Suspense>
@@ -506,8 +506,8 @@ function AppInner() {
                   onCellGapChange={v => handleFieldChange('cell_gap_mm', v)}
                   endPlateThickness={toNum(form.end_plate_thickness_mm, 10)}
                   onEndPlateChange={v => handleFieldChange('end_plate_thickness_mm', v)}
-                  busbarThickness={toNum(form.busbar_thickness_mm, 1)}
-                  onBusbarHeightChange={v => handleFieldChange('busbar_thickness_mm', v)}
+                  busbarLength={toNum(form.busbar_thickness_mm, 10)}
+                  onBusbarLengthChange={v => handleFieldChange('busbar_thickness_mm', v)}
                   stepPayload={lastPayload}
                   externalBuilderRef={builderRef}
                   onExportGLB={handleExportGLB}

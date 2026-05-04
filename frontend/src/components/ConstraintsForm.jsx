@@ -53,7 +53,7 @@ export default function ConstraintsForm({ form, onFieldChange, cell }) {
             <InputRow label={t('form.cell_gap')}    unit="mm" value={form.cell_gap_mm}     onChange={set('cell_gap_mm')}     min={0} step={0.1} />
             {isPrismatic && <>
               <InputRow label={t('form.end_plate')}    unit="mm" value={form.end_plate_thickness_mm} onChange={set('end_plate_thickness_mm')} min={0} step={1} />
-              <InputRow label={t('form.busbar_width')} unit="mm" value={form.busbar_thickness_mm}   onChange={set('busbar_thickness_mm')}    min={0} step={1} />
+              <InputRow label={t('form.busbar_length')} unit="mm" value={form.busbar_thickness_mm}   onChange={set('busbar_thickness_mm')}    min={0} step={1} />
             </>}
           </div>
         </div>

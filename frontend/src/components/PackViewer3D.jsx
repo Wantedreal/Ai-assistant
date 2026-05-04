@@ -9,7 +9,7 @@ import { useT } from '../i18n'
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI != null
 
-export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange, endPlateThickness = 10, onEndPlateChange, busbarThickness = 1, onBusbarHeightChange, stepPayload = null, externalBuilderRef = null, onExportGLB, onExportSTL, onExportSTEP, exporting }) {
+export default function PackViewer3D({ housingL, housingW, housingH, result, cameraPreset = 'free', onFullscreenClick, isFullscreen = false, cellGap = 1.5, onCellGapChange, endPlateThickness = 10, onEndPlateChange, busbarLength = 1, onBusbarLengthChange, stepPayload = null, externalBuilderRef = null, onExportGLB, onExportSTL, onExportSTEP, exporting }) {
   const t = useT()
   const mountRef = useRef(null)
   const controlsRef = useRef(null)
@@ -166,7 +166,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
       const builder = new PackAssemblyBuilder(scene, isElectron)
       builder.setCellGap(cellGap)
       builder.setEndPlateThickness(endPlateThickness)
-      builder.setBusbarThickness(busbarThickness)
+      builder.setBusbarLength(busbarLength)
       if (cellGltfRef.current) builder.setCellModel(cellGltfRef.current)
       if (prismaticGltfRef.current) builder.setPrismaticModel(prismaticGltfRef.current)
       if (prismaticBusbarGltfRef.current) builder.setPrismaticBusbarModel(prismaticBusbarGltfRef.current)
@@ -251,7 +251,7 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
         mountRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1c23;color:#999;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:10px">⚠️</div><div>3D Viewer unavailable</div><div style="font-size:12px;margin-top:8px;color:#666">${error.message}</div></div></div>`
       }
     }
-  }, [housingL, housingW, housingH, result, cellGap, endPlateThickness, busbarThickness, cellGltfReady, prismaticGltfReady, prismaticBusbarGltfReady, separatorGltfReady, endPlateGltfReady, sideSupportGltfReady])
+  }, [housingL, housingW, housingH, result, cellGap, endPlateThickness, busbarLength, cellGltfReady, prismaticGltfReady, prismaticBusbarGltfReady, separatorGltfReady, endPlateGltfReady, sideSupportGltfReady])
 
   // ─── Camera preset animation ────────────────────────────────────────────────
   useEffect(() => {
@@ -365,8 +365,8 @@ export default function PackViewer3D({ housingL, housingW, housingH, result, cam
           onCellGapChange={onCellGapChange}
           endPlateThickness={endPlateThickness}
           onEndPlateChange={onEndPlateChange}
-          busbarHeight={busbarThickness}
-          onBusbarHeightChange={onBusbarHeightChange}
+          busbarLength={busbarLength}
+          onBusbarLengthChange={onBusbarLengthChange}
         />
       )}
 

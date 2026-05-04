@@ -393,6 +393,3 @@ The bottom row (`bottom-row`) is a flex row with `align-items: stretch`. Cards i
 Copy `frontend/release/Battery Pack Designer Setup 1.0.0.exe` to target machine (USB, file share, etc.). Double-click to install — no Python or Node.js required. If Windows SmartScreen blocks it: "More info" → "Run anyway" (unsigned app warning, normal for internal tools).
 
 If the app fails on a very old machine: install [VC++ 2015-2022 Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) (required by Python 3.13, usually pre-installed on Windows 10/11).
-
-## Your task
-Review code quality and plan next steps. Session work (2026-04-28): added demo mode flag, fixed CORS port-binding issue, pushed battery_cells_curated.xlsx to git.
