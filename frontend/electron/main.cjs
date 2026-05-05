@@ -111,11 +111,25 @@ async function startBackend() {
     logLine(`[spawn error] ${err.message}`)
   })
 
+  // Detect immediate crash (before health check even starts)
+  let earlyExit = null
   backendProcess.on('exit', (code, signal) => {
     logLine(`[exit] code=${code} signal=${signal}`)
+    earlyExit = { code, signal }
     backendProcess = null
   })
-  
+
+  // Small delay so the process has time to crash before we start polling
+  await new Promise(r => setTimeout(r, 500))
+  if (earlyExit !== null) {
+    throw new Error(
+      `Backend process exited immediately (code ${earlyExit.code}).\n\n` +
+      `This is usually caused by a missing system component.\n\n` +
+      `Last output:\n${backendLastOutput.trim() || '(no output)'}\n\n` +
+      `See full log: %APPDATA%\\backend.log`
+    )
+  }
+
   // Wait for health check
   await waitForBackendHealth()
 }
@@ -148,7 +162,7 @@ async function waitForBackendHealth() {
       
       if (attempts >= HEALTH_CHECK_MAX_ATTEMPTS) {
         throw new Error(
-          `Backend health check failed after ${HEALTH_CHECK_MAX_ATTEMPTS} attempts.\n\n` +
+          `Backend did not respond after ${HEALTH_CHECK_MAX_ATTEMPTS} seconds.\n\n` +
           `Backend output:\n${backendLastOutput.trim() || '(no output — process may have crashed immediately)'}`
         )
       }
@@ -229,9 +243,15 @@ app.on('ready', async () => {
     await createWindow()
   } catch (error) {
     console.error('[Electron] Startup error:', error)
+    const logPath = path.join(app.getPath('appData'), 'backend.log')
     dialog.showErrorBox(
-      'Battery Pack Designer — Startup Error',
-      `Failed to start the application:\n\n${error.message}\n\nPlease reinstall the application.`
+      'Battery Pack Designer — Could not start',
+      `The calculation engine failed to start.\n\n` +
+      `Most common causes:\n` +
+      `  • Antivirus blocked the engine (add an exception for the install folder)\n` +
+      `  • Missing Visual C++ Runtime — reinstall the app (the installer will fix this automatically)\n\n` +
+      `Error details:\n${error.message}\n\n` +
+      `Full log: ${logPath}`
     )
     app.quit()
   }

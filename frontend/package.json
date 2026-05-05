@@ -55,7 +55,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "installerSidebar": null
+      "installerSidebar": null,
+      "include": "build/installer.nsh"
     }
   },
   "dependencies": {
