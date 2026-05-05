@@ -18,6 +18,9 @@ ocp_datas, ocp_binaries, ocp_hidden = collect_all('OCP')
 # openpyxl — has XML schema data files PyInstaller misses via static analysis
 openpyxl_datas, openpyxl_binaries, openpyxl_hidden = collect_all('openpyxl')
 
+# numpy — required by CadQuery internally for coordinate transforms
+numpy_datas, numpy_binaries, numpy_hidden = collect_all('numpy')
+
 a = Analysis(
     ['run.py'],
     pathex=['.'],
@@ -26,6 +29,7 @@ a = Analysis(
         *cq_binaries,
         *ocp_binaries,
         *openpyxl_binaries,
+        *numpy_binaries,
     ],
     datas=[
         # The SQLite database with all 384 battery cells (seed — copied to userData on first run)
@@ -38,6 +42,8 @@ a = Analysis(
         *ocp_datas,
         # openpyxl XML schemas and templates
         *openpyxl_datas,
+        # numpy data files (required by CadQuery)
+        *numpy_datas,
     ],
     hiddenimports=[
         # uvicorn dynamically imports its event loop and protocol backends
@@ -77,12 +83,13 @@ a = Analysis(
         *cq_hidden,
         *ocp_hidden,
         *openpyxl_hidden,
+        *numpy_hidden,
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     # Explicitly exclude heavy libraries that are NOT used by the server
-    excludes=['pandas', 'numpy', 'matplotlib', 'tkinter',
+    excludes=['pandas', 'matplotlib', 'tkinter',
               'notebook', 'IPython', 'jupyter'],
     noarchive=False,
 )
