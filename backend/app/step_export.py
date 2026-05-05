@@ -25,10 +25,29 @@ Author: PFE Capgemini Engineering — Battery Pre-Design Assistant
 import hashlib
 import math
 import os
+import sys
 import tempfile
 import warnings
 from collections import OrderedDict
 from io import BytesIO
+from types import ModuleType
+
+# CadQuery imports casadi (constraint solver) at the top of its assembly module.
+# We only use basic geometry here — no assembly constraints — so the real casadi
+# DLL is never needed.  Injecting a stub before the cadquery import prevents
+# the native DLL load attempt entirely, which also keeps startup fast.
+if 'casadi' not in sys.modules:
+    _stub = ModuleType('casadi')
+    _stub.__spec__ = None
+
+    class _S:
+        def __init__(self, *a, **kw): pass
+        def __call__(self, *a, **kw): return self
+        def __getattr__(self, n): return _S()
+        def __iter__(self): return iter([])
+
+    _stub.__getattr__ = lambda n: _S  # type: ignore
+    sys.modules['casadi'] = _stub
 
 import cadquery as cq
 from cadquery import Assembly, Color, Compound, Location, Vector

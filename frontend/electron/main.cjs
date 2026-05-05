@@ -33,7 +33,7 @@ const BACKEND_PORT = 8000
 // (IPv6) while uvicorn only binds 0.0.0.0 (IPv4), causing connection refused.
 const BACKEND_HEALTH_URL = `http://127.0.0.1:${BACKEND_PORT}/api/v1/health`
 const HEALTH_CHECK_INTERVAL = 1000 // ms
-const HEALTH_CHECK_MAX_ATTEMPTS = 30 // ~30 seconds timeout
+const HEALTH_CHECK_MAX_ATTEMPTS = 60 // ~60 seconds timeout
 
 /**
  * Determine the path to the FastAPI backend binary

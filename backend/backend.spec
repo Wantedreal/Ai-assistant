@@ -21,8 +21,8 @@ openpyxl_datas, openpyxl_binaries, openpyxl_hidden = collect_all('openpyxl')
 # numpy — required by CadQuery internally for coordinate transforms
 numpy_datas, numpy_binaries, numpy_hidden = collect_all('numpy')
 
-# casadi — required by CadQuery (algorithmic differentiation / optimization)
-casadi_datas, casadi_binaries, casadi_hidden = collect_all('casadi')
+# casadi is stubbed out in step_export.py (we don't use assembly constraints)
+# — do NOT bundle it; its 200 MB of DLLs slow startup and fail to load anyway
 
 a = Analysis(
     ['run.py'],
@@ -33,7 +33,6 @@ a = Analysis(
         *ocp_binaries,
         *openpyxl_binaries,
         *numpy_binaries,
-        *casadi_binaries,
     ],
     datas=[
         # The SQLite database with all 384 battery cells (seed — copied to userData on first run)
@@ -48,8 +47,6 @@ a = Analysis(
         *openpyxl_datas,
         # numpy data files (required by CadQuery)
         *numpy_datas,
-        # casadi data files (required by CadQuery)
-        *casadi_datas,
     ],
     hiddenimports=[
         # uvicorn dynamically imports its event loop and protocol backends
@@ -90,14 +87,13 @@ a = Analysis(
         *ocp_hidden,
         *openpyxl_hidden,
         *numpy_hidden,
-        *casadi_hidden,
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     # Explicitly exclude heavy libraries that are NOT used by the server
     excludes=['pandas', 'matplotlib', 'tkinter',
-              'notebook', 'IPython', 'jupyter'],
+              'notebook', 'IPython', 'jupyter', 'casadi'],
     noarchive=False,
 )
 

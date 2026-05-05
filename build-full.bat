@@ -86,4 +86,3 @@ echo   Done! Installer ready:
 echo   frontend\release\Battery Pack Designer Setup 1.0.0.exe
 echo  ============================================
 echo.
-pause
