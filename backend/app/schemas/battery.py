@@ -6,6 +6,30 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Optional, List
 
 
+# ── Lookup table schemas ──────────────────────────────────────────────────────
+
+class FabricantRead(BaseModel):
+    id:   int
+    nom:  str
+    pays: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChimieRead(BaseModel):
+    id:  int
+    nom: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TypeCelluleRead(BaseModel):
+    id:          int
+    nom:         str
+    description: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 class VerdictEnum(str, Enum):
     """Calculation verdict"""
     ACCEPT = "ACCEPT"

@@ -25,6 +25,8 @@ def get_db():
 
 def init_db():
     """Initialize database — create all tables and apply safe column migrations."""
+    # Import all models so Base.metadata knows about every table
+    import app.models  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _migrate_schema()
 
@@ -32,13 +34,29 @@ def init_db():
 def _migrate_schema():
     """Add new columns to existing databases without dropping data."""
     with engine.connect() as conn:
-        for col, col_type in [('prix_usd', 'REAL')]:
+        # cellules columns
+        for col, col_type in [
+            ('prix_usd',        'REAL'),
+            ('fabricant_id',    'INTEGER'),
+            ('chimie_id',       'INTEGER'),
+            ('type_cellule_id', 'INTEGER'),
+        ]:
             try:
                 conn.execute(text(f'SELECT {col} FROM cellules LIMIT 0'))
             except Exception:
                 conn.execute(text(f'ALTER TABLE cellules ADD COLUMN {col} {col_type}'))
                 conn.commit()
         _migrate_history_autoincrement(conn)
+        _seed_chimies(conn)
+
+
+def _seed_chimies(conn) -> None:
+    """Seed known chemistries so the FK can be set even before a full import."""
+    for nom in ("NMC", "LFP", "NCA", "LTO", "LCO"):
+        conn.execute(text(
+            "INSERT OR IGNORE INTO chimies (nom) VALUES (:n)"
+        ), {"n": nom})
+    conn.commit()
 
 
 def _migrate_history_autoincrement(conn):

@@ -28,6 +28,9 @@ from typing import List, Optional
 
 from app.db.database import engine, get_db, init_db
 from app.models.cellule import Cellule
+from app.models.fabricant import Fabricant
+from app.models.chimie import Chimie
+from app.models.type_cellule import TypeCellule
 from app.models.history import CalculationHistory
 from app.schemas.battery import (
     CalculationRequest, CalculationResult, CellRead,
@@ -35,6 +38,7 @@ from app.schemas.battery import (
     ExplainRequest, ExplainResponse,
     HistoryEntry, HistoryListResponse,
     CellCreate, CellAddResponse,
+    FabricantRead, ChimieRead, TypeCelluleRead,
 )
 from app.core.engine import run_engine
 from app.core.recommender import recommend_cells
@@ -669,6 +673,27 @@ def clear_history(db: Session = Depends(get_db)):
     db.query(CalculationHistory).delete()
     db.commit()
     return {"deleted": count}
+
+
+# ── Lookup table endpoints ────────────────────────────────────────────────────
+
+@app.get("/api/v1/fabricants", response_model=List[FabricantRead], tags=["Catalogue"])
+def list_fabricants(db: Session = Depends(get_db)):
+    """Return all manufacturers in the catalogue."""
+    return db.query(Fabricant).order_by(Fabricant.nom).all()
+
+
+@app.get("/api/v1/chimies", response_model=List[ChimieRead], tags=["Catalogue"])
+def list_chimies(db: Session = Depends(get_db)):
+    """Return all chemistries with their k_constant and aging_exponent."""
+    return db.query(Chimie).order_by(Chimie.nom).all()
+
+
+
+@app.get("/api/v1/types-cellule", response_model=List[TypeCelluleRead], tags=["Catalogue"])
+def list_types_cellule(db: Session = Depends(get_db)):
+    """Return all cell types registered in the catalogue."""
+    return db.query(TypeCellule).order_by(TypeCellule.nom).all()
 
 
 # ── Root and fallback endpoints ───────────────────────────────────────────────

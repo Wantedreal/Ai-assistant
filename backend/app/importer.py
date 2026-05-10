@@ -26,6 +26,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import DATABASE_PATH
 from app.models.cellule import Cellule
+from app.models.fabricant import Fabricant
+from app.models.chimie import Chimie
+from app.models.type_cellule import TypeCellule
 
 CONFIG_PATH = DATABASE_PATH.parent / "import_config.json"
 
@@ -132,6 +135,42 @@ def _is_extended_format(headers: list) -> bool:
     return "Product_Number" in headers
 
 
+def _upsert_fabricant(nom: str | None, db: Session) -> int | None:
+    if not nom or _is_null(nom):
+        return None
+    nom = str(nom).strip()
+    obj = db.query(Fabricant).filter_by(nom=nom).first()
+    if not obj:
+        obj = Fabricant(nom=nom)
+        db.add(obj)
+        db.flush()
+    return obj.id
+
+
+def _upsert_chimie(nom: str | None, db: Session) -> int | None:
+    if not nom or _is_null(nom):
+        return None
+    nom = str(nom).strip().upper()
+    obj = db.query(Chimie).filter_by(nom=nom).first()
+    if not obj:
+        obj = Chimie(nom=nom)
+        db.add(obj)
+        db.flush()
+    return obj.id
+
+
+def _upsert_type(nom: str | None, db: Session) -> int | None:
+    if not nom or _is_null(nom):
+        return None
+    nom = str(nom).strip()
+    obj = db.query(TypeCellule).filter_by(nom=nom).first()
+    if not obj:
+        obj = TypeCellule(nom=nom)
+        db.add(obj)
+        db.flush()
+    return obj.id
+
+
 def _import_extended(ws, db: Session) -> int:
     """Import from new-format Excel (TUM/ISI dataset with Phase 1 fields)."""
     headers = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
@@ -189,6 +228,15 @@ def _import_extended(ws, db: Session) -> int:
             if dod_raw is not None and dod_raw <= 1.0:
                 dod_raw = round(dod_raw * 100.0, 1)
 
+            fab_nom = str(row[idx["Company"]]).strip() if "Company" in idx and not _is_null(row[idx["Company"]]) else None
+            chi_nom = _clean_chemistry(
+                row[idx["Chemistry_Detail"]] if "Chemistry_Detail" in idx else None,
+                row[idx["Chemistry"]] if "Chemistry" in idx else None,
+            )
+            fab_id  = _upsert_fabricant(fab_nom, db)
+            chi_id  = _upsert_chimie(chi_nom, db)
+            typ_id  = _upsert_type(cell_type, db)
+
             db.add(Cellule(
                 nom               = name,
                 type_cellule      = cell_type,
@@ -215,11 +263,11 @@ def _import_extended(ws, db: Session) -> int:
                     _SWELLING_DEFAULT,
                 ),
 
-                fabricant              = str(row[idx["Company"]]).strip() if "Company" in idx and not _is_null(row[idx["Company"]]) else None,
-                chimie                 = _clean_chemistry(
-                    row[idx["Chemistry_Detail"]] if "Chemistry_Detail" in idx else None,
-                    row[idx["Chemistry"]] if "Chemistry" in idx else None,
-                ),
+                fabricant              = fab_nom,
+                chimie                 = chi_nom,
+                fabricant_id           = fab_id,
+                chimie_id              = chi_id,
+                type_cellule_id        = typ_id,
                 cycle_life             = _to_int(row[idx["CycleLife"]]) if "CycleLife" in idx else None,
                 dod_reference_pct      = dod_raw,
                 c_rate_max_discharge   = _to_float(row[idx["Discharge_MaxConstant_Crate"]]) if "Discharge_MaxConstant_Crate" in idx else None,
@@ -268,6 +316,11 @@ def _import_legacy(ws, db: Session) -> int:
             dia = _to_float(_get(row, "diameter_mm")) if cell_type == "Cylindrical" else None
             lon = _to_float(_get(row, "longueur_mm")) or (dia or 0.0)
             lar = _to_float(_get(row, "largeur_mm"))  or (dia or 0.0)
+            fab_nom = str(_get(row, "fabricant")).strip() if not _is_null(_get(row, "fabricant")) else None
+            chi_nom = str(_get(row, "chimie")).strip()    if not _is_null(_get(row, "chimie"))    else None
+            fab_id  = _upsert_fabricant(fab_nom, db)
+            chi_id  = _upsert_chimie(chi_nom, db)
+            typ_id  = _upsert_type(cell_type, db)
             db.add(Cellule(
                 nom               = str(_get(row, "nom")),
                 longueur_mm       = lon,
@@ -281,8 +334,11 @@ def _import_legacy(ws, db: Session) -> int:
                 taux_swelling_pct = _to_float(_get(row, "taux_swelling_pct")) or 0.0,
                 diameter_mm       = dia,
                 # Extended fields — all present in battery_cells_curated.xlsx
-                fabricant            = str(_get(row, "fabricant")).strip() if not _is_null(_get(row, "fabricant")) else None,
-                chimie               = str(_get(row, "chimie")).strip()    if not _is_null(_get(row, "chimie"))    else None,
+                fabricant            = fab_nom,
+                chimie               = chi_nom,
+                fabricant_id         = fab_id,
+                chimie_id            = chi_id,
+                type_cellule_id      = typ_id,
                 cycle_life           = _to_int(_get(row, "cycle_life")),
                 dod_reference_pct    = _to_float(_get(row, "dod_reference_pct")),
                 c_rate_max_discharge = _to_float(_get(row, "c_rate_max_discharge")),

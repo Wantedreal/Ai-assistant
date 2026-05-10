@@ -1,5 +1,6 @@
 """SQLAlchemy ORM model for battery cells"""
-from sqlalchemy import Column, Integer, String, Float
+from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy.orm import relationship
 from app.db.database import Base
 
 
@@ -41,6 +42,15 @@ class Cellule(Base):
     temp_max_charge_c    = Column(Float,       nullable=True)   # max charge temperature (°C)
     v_charge_max         = Column(Float,       nullable=True)   # charge cutoff voltage (V)
     prix_usd             = Column(Float,       nullable=True)   # unit price in USD (optional)
+
+    # ── Relational FK columns (added alongside string columns for compatibility) ──
+    fabricant_id     = Column(Integer, ForeignKey("fabricants.id"),    nullable=True)
+    chimie_id        = Column(Integer, ForeignKey("chimies.id"),       nullable=True)
+    type_cellule_id  = Column(Integer, ForeignKey("types_cellule.id"), nullable=True)
+
+    fabricant_rel    = relationship("Fabricant",   back_populates="cellules", lazy="joined")
+    chimie_rel       = relationship("Chimie",      back_populates="cellules", lazy="joined")
+    type_cellule_rel = relationship("TypeCellule", back_populates="cellules", lazy="joined")
 
     def __repr__(self) -> str:
         return (
