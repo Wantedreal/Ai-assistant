@@ -12,9 +12,12 @@ Keys: set GROQ_API_KEY in backend/.env  (preferred)
 """
 
 import os
+import logging
 import httpx
 from pathlib import Path
 from typing import AsyncIterator, Optional
+
+logger = logging.getLogger(__name__)
 
 # backend/.env — resolved relative to this file so it works regardless of cwd
 _ENV_PATH = Path(__file__).resolve().parent.parent / '.env'
@@ -266,6 +269,12 @@ async def stream_chat(
         )
         return
 
+    logger.info("chat: %d providers to try, groq_key=%s openrouter_key=%s",
+                len(attempts),
+                "yes" if _groq_key() else "NO",
+                "yes" if _openrouter_key() else "NO")
+
+    errors: list[str] = []
     for provider, model, key in attempts:
         url = _GROQ_URL if provider == "groq" else _OPENROUTER_URL
         headers: dict = {"Content-Type": "application/json"}
@@ -292,13 +301,21 @@ async def stream_chat(
                     "POST", url, headers=headers, json=payload
                 ) as resp:
                     if resp.status_code in (429, 503):
-                        continue  # rate-limited — try next
+                        err = f"{provider}/{model}: HTTP {resp.status_code}"
+                        logger.warning("chat skip: %s", err)
+                        errors.append(err)
+                        continue
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
                         if line.startswith("data: "):
                             yield line + "\n\n"
             return  # success — done
-        except Exception:
-            continue  # network error (SSL/proxy) — try next
+        except Exception as exc:
+            err = f"{provider}/{model}: {type(exc).__name__}: {exc}"
+            logger.warning("chat skip: %s", err)
+            errors.append(err)
+            continue
 
-    yield 'data: {"error": "All providers are rate-limited. Try again in a moment."}\n\n'
+    summary = " | ".join(errors[:3]) if errors else "unknown"
+    logger.error("chat: all providers failed — %s", summary)
+    yield f'data: {{"error": "AI unavailable. First error: {errors[0] if errors else summary}"}}\n\n'
