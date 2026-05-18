@@ -12,12 +12,10 @@ Keys: set GROQ_API_KEY in backend/.env  (preferred)
 """
 
 import os
-import logging
+import urllib.request
 import httpx
 from pathlib import Path
 from typing import AsyncIterator, Optional
-
-logger = logging.getLogger(__name__)
 
 # backend/.env — resolved relative to this file so it works regardless of cwd
 _ENV_PATH = Path(__file__).resolve().parent.parent / '.env'
@@ -293,7 +291,15 @@ async def stream_chat(
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            # Use Windows system proxy (set by Zscaler/corporate VPN)
+            # and disable SSL verification to bypass SSL inspection
+            sys_proxies = urllib.request.getproxies()
+            proxy = sys_proxies.get("https") or sys_proxies.get("http")
+            print(f"[chat] trying {provider}/{model} proxy={proxy}", flush=True)
+            async with httpx.AsyncClient(
+                timeout=60.0, verify=False,
+                proxy=proxy,
+            ) as client:
                 async with client.stream(
                     "POST", url, headers=headers, json=payload
                 ) as resp:
