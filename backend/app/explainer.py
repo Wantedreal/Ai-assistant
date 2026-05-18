@@ -178,6 +178,7 @@ def explain(prompt_text: str, lang: str = "en") -> str:
                 "max_tokens": 800,
             },
             timeout=30.0,
+            verify=False,
         )
 
         if response.status_code == 429 or response.status_code >= 500:

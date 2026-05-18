@@ -287,7 +287,7 @@ async def stream_chat(
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
                 async with client.stream(
                     "POST", url, headers=headers, json=payload
                 ) as resp:
@@ -299,6 +299,6 @@ async def stream_chat(
                             yield line + "\n\n"
             return  # success — done
         except Exception:
-            continue  # network error — try next
+            continue  # network error (SSL/proxy) — try next
 
     yield 'data: {"error": "All providers are rate-limited. Try again in a moment."}\n\n'
