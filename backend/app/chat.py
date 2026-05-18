@@ -3,15 +3,17 @@ chat.py
 -------
 Streaming multi-turn chat assistant for the Battery Pack Designer.
 
-Provider priority (both free):
-  1. Groq        — LPU chip, 500-800 tok/s, 14 400 req/day free
-  2. OpenRouter  — fallback chain (same key as explainer.py)
+Provider priority:
+  1. Anthropic Claude  — set ANTHROPIC_API_KEY in backend/.env (corporate PC)
+  2. Groq              — embedded key, free, fast (home/personal PC)
+  3. OpenRouter        — embedded key, free fallback chain
 
-Keys: set GROQ_API_KEY in backend/.env  (preferred)
-      OPENROUTER_API_KEY is the fallback already used by explainer.py.
+On corporate networks (Zscaler): put ANTHROPIC_API_KEY in backend/.env.
+On other machines: Groq/OpenRouter keys are embedded — no setup needed.
 """
 
 import os
+import json
 import urllib.request
 import httpx
 from pathlib import Path
@@ -21,7 +23,6 @@ from typing import AsyncIterator, Optional
 _ENV_PATH = Path(__file__).resolve().parent.parent / '.env'
 
 # ── Embedded keys — fallback when .env is absent (e.g. another dev machine) ──
-# .env takes priority; these are read only if the env vars are not set.
 # Keys are split across concatenated literals so static scanners cannot match
 # the full credential pattern against a single string token.
 _GROQ_EMBEDDED: str = (
@@ -38,8 +39,8 @@ _GROQ_URL       = "https://api.groq.com/openai/v1/chat/completions"
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 _GROQ_MODELS = [
-    "llama-3.3-70b-versatile",  # best reasoning, 32k context, 6k tok/min free
-    "llama-3.1-8b-instant",     # 20k tok/min fast last-resort
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
 ]
 
 _OPENROUTER_MODELS = [
@@ -152,6 +153,11 @@ def _load_env() -> None:
         pass
 
 
+def _anthropic_key() -> Optional[str]:
+    _load_env()
+    return os.environ.get("ANTHROPIC_API_KEY", "").strip() or None
+
+
 def _groq_key() -> Optional[str]:
     _load_env()
     return os.environ.get("GROQ_API_KEY", "").strip() or _GROQ_EMBEDDED or None
@@ -162,6 +168,10 @@ def _openrouter_key() -> Optional[str]:
     return os.environ.get("OPENROUTER_API_KEY", "").strip() or _OPENROUTER_EMBEDDED or None
 
 
+def _make_client(proxy: Optional[str]) -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=60.0, verify=False, proxy=proxy)
+
+
 # ── Context builder ───────────────────────────────────────────────────────────
 
 def build_context(
@@ -169,10 +179,6 @@ def build_context(
     form_data: Optional[dict] = None,
     result_data: Optional[dict] = None,
 ) -> Optional[str]:
-    """
-    Format the current app state into a compact string appended to the system
-    prompt so the AI knows what the engineer is looking at right now.
-    """
     parts = []
 
     if cell:
@@ -240,16 +246,47 @@ async def stream_chat(
 ) -> AsyncIterator[str]:
     """
     Yield raw SSE lines ("data: {...}\\n\\n").
-    Tries Groq models first, then OpenRouter models, skipping on 429/503.
+    Priority: Anthropic Claude (ANTHROPIC_API_KEY in .env) → Groq → OpenRouter.
     """
     lang_suffix = " Réponds en français." if lang == "fr" else ""
     system_content = _SYSTEM_PROMPT + lang_suffix
     if context:
         system_content += f"\n\n### Current design state\n{context}"
 
-    full_messages = [{"role": "system", "content": system_content}] + messages
+    sys_proxies = urllib.request.getproxies()
+    proxy = sys_proxies.get("https") or sys_proxies.get("http")
 
-    # Build attempt list: Groq first, OpenRouter second
+    errors: list[str] = []
+
+    # ── 1. Anthropic Claude (corporate PC with ANTHROPIC_API_KEY in .env) ──────
+    ak = _anthropic_key()
+    if ak:
+        print(f"[chat] trying anthropic/claude-sonnet-4-6", flush=True)
+        try:
+            import anthropic as _anthropic_sdk
+            http_client = httpx.AsyncClient(verify=False, proxy=proxy, timeout=60.0)
+            aclient = _anthropic_sdk.AsyncAnthropic(
+                api_key=ak,
+                http_client=http_client,
+            )
+            async with aclient.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system=system_content,
+                messages=messages,
+                temperature=0.3,
+            ) as stream:
+                async for text in stream.text_stream:
+                    chunk = json.dumps({"choices": [{"delta": {"content": text}}]})
+                    yield f"data: {chunk}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        except Exception as exc:
+            err = f"anthropic/claude-sonnet-4-6: {type(exc).__name__}: {exc}"
+            print(f"[chat] skip: {err}", flush=True)
+            errors.append(err)
+
+    # ── 2. Groq + OpenRouter (home / personal PC) ─────────────────────────────
     attempts: list[tuple[str, str, str]] = []
     gk = _groq_key()
     if gk:
@@ -261,15 +298,11 @@ async def stream_chat(
             attempts.append(("openrouter", m, ok))
 
     if not attempts:
-        yield (
-            'data: {"error": "No API key found. '
-            'Add GROQ_API_KEY to backend/.env"}\n\n'
-        )
+        yield 'data: {"error": "No API key found. Add ANTHROPIC_API_KEY to backend/.env"}\n\n'
         return
 
-    print(f"[chat] {len(attempts)} providers | groq={'yes' if _groq_key() else 'NO'} openrouter={'yes' if _openrouter_key() else 'NO'}", flush=True)
+    full_messages = [{"role": "system", "content": system_content}] + messages
 
-    errors: list[str] = []
     for provider, model, key in attempts:
         url = _GROQ_URL if provider == "groq" else _OPENROUTER_URL
         headers: dict = {"Content-Type": "application/json"}
@@ -291,15 +324,8 @@ async def stream_chat(
         }
 
         try:
-            # Use Windows system proxy (set by Zscaler/corporate VPN)
-            # and disable SSL verification to bypass SSL inspection
-            sys_proxies = urllib.request.getproxies()
-            proxy = sys_proxies.get("https") or sys_proxies.get("http")
             print(f"[chat] trying {provider}/{model} proxy={proxy}", flush=True)
-            async with httpx.AsyncClient(
-                timeout=60.0, verify=False,
-                proxy=proxy,
-            ) as client:
+            async with _make_client(proxy) as client:
                 async with client.stream(
                     "POST", url, headers=headers, json=payload
                 ) as resp:
@@ -312,7 +338,7 @@ async def stream_chat(
                     async for line in resp.aiter_lines():
                         if line.startswith("data: "):
                             yield line + "\n\n"
-            return  # success — done
+            return
         except Exception as exc:
             err = f"{provider}/{model}: {type(exc).__name__}: {exc}"
             print(f"[chat] skip: {err}", flush=True)
