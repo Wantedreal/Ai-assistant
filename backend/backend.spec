@@ -76,11 +76,14 @@ a = Analysis(
         'email.mime.text',
         'email.mime.multipart',
         'email.mime.base',
-        # httpx — used by the AI chemistry explainer
+        # httpx — used by AI chat + explainer
         'httpx',
         'httpx._transports.default',
         'httpx._transports.asgi',
         'httpx._client',
+        # python-dotenv — loads GROQ_API_KEY / OPENROUTER_API_KEY from .env
+        'dotenv',
+        'dotenv.main',
         # collected hidden imports from each library
         *reportlab_hidden,
         *cq_hidden,
