@@ -149,7 +149,7 @@ export default function ComparePanel({ cells, onClose }) {
   const filledCells = selectedCells.filter(Boolean)
   const canCompare  = filledCells.length >= 2
 
-  // Per-spec winner index among filled cells
+  // Per-spec winner index among filled cells (used for the best-value dot on diff rows)
   const winners = useMemo(() => {
     if (filledCells.length < 2) return {}
     const map = {}
@@ -161,6 +161,18 @@ export default function ComparePanel({ cells, onClose }) {
       const best = s.compare === 'higher' ? Math.max(...valid) : Math.min(...valid)
       const idx  = nums.findIndex(n => n === best)
       if (idx !== -1) map[s.key] = idx
+    })
+    return map
+  }, [selectedCells, filledCells.length])
+
+  // Per-row status: 'same' if all filled cells share the same displayed value, 'diff' otherwise
+  const rowStatuses = useMemo(() => {
+    if (filledCells.length < 2) return {}
+    const map = {}
+    SPEC_DEFS.forEach(s => {
+      const vals = selectedCells.filter(Boolean).map(c => s.extract(c))
+      if (vals.length < 2) { map[s.key] = null; return }
+      map[s.key] = vals.every(v => v === vals[0]) ? 'same' : 'diff'
     })
     return map
   }, [selectedCells, filledCells.length])
@@ -247,18 +259,22 @@ export default function ComparePanel({ cells, onClose }) {
                     {selectedCells.map((c, i) => {
                       if (!c) return <td key={i} style={panelStyles.td}>—</td>
                       const isWinner = winners[s.key] === i
-                      const val = s.extract(c)
+                      const status   = rowStatuses[s.key]
+                      const val      = s.extract(c)
                       return (
                         <td
                           key={i}
                           style={{
                             ...panelStyles.td,
-                            ...(isWinner ? panelStyles.winner : {}),
+                            ...(status === 'same' ? panelStyles.sameValue : {}),
+                            ...(status === 'diff' ? panelStyles.diffValue  : {}),
                             fontWeight: isWinner ? 700 : 400,
                           }}
                         >
                           {val}
-                          {isWinner && <span style={panelStyles.winnerDot} title="Best">●</span>}
+                          {isWinner && status === 'diff' && (
+                            <span style={panelStyles.winnerDot} title="Best">●</span>
+                          )}
                         </td>
                       )
                     })}
@@ -345,9 +361,17 @@ const panelStyles = {
     color: '#4ade80',
     background: 'rgba(74,222,128,0.06)',
   },
+  sameValue: {
+    color: '#4ade80',
+    background: 'rgba(74,222,128,0.07)',
+  },
+  diffValue: {
+    color: '#f87171',
+    background: 'rgba(248,113,113,0.07)',
+  },
   winnerDot: {
     fontSize: '0.5rem', marginLeft: 5,
-    verticalAlign: 'middle', color: '#4ade80',
+    verticalAlign: 'middle', color: '#fbbf24',
   },
   chemBadge: {
     display: 'inline-block', borderRadius: 4,

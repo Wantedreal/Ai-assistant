@@ -21,7 +21,7 @@ import httpx
 # ── Embedded key for the production build ─────────────────────────────────────
 # Set OPENROUTER_API_KEY in backend/.env (preferred) or replace the empty string
 # below before running build-full.bat.  Never commit a live key here.
-_EMBEDDED_KEY: str = ""
+_EMBEDDED_KEY: str = ""  # set in backend/.env  →  OPENROUTER_API_KEY=...
 
 # Model fallback chain — tried in order until one responds without 429.
 # All are free on OpenRouter. Best reasoning first.

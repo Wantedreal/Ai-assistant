@@ -23,6 +23,7 @@ Author: PFE Capgemini Engineering — Battery Pre-Design Assistant
 """
 
 import hashlib
+import logging
 import math
 import os
 import sys
@@ -31,6 +32,8 @@ import warnings
 from collections import OrderedDict
 from io import BytesIO
 from types import ModuleType
+
+_log = logging.getLogger(__name__)
 
 # CadQuery imports casadi (constraint solver) at the top of its assembly module.
 # We only use basic geometry here — no assembly constraints — so the real casadi
@@ -53,7 +56,7 @@ import cadquery as cq
 from cadquery import Assembly, Color, Compound, Location, Vector
 
 from app.models.cellule import Cellule
-from app.schemas.battery import CalculationRequest, CalculationResult
+from app.schemas.battery import CalculationRequest, CalculationResult, VerdictEnum
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="cadquery")
 
@@ -70,6 +73,7 @@ def _cache_key(req: CalculationRequest, result, cell: Cellule) -> str:
         cell.longueur_mm, cell.largeur_mm, cell.hauteur_mm, cell.diameter_mm,
         req.cell_gap_mm,
         getattr(req, 'end_plate_thickness_mm', 10.0) or 0.0,
+        result.verdict.value if hasattr(result.verdict, 'value') else str(result.verdict),
     )
     return hashlib.md5(str(parts).encode()).hexdigest()
 
@@ -86,6 +90,54 @@ def _cache_set(key: str, data: bytes) -> None:
     _CACHE.move_to_end(key)
     if len(_CACHE) > _CACHE_MAX:
         _CACHE.popitem(last=False)
+
+# ── Dimension verification ────────────────────────────────────────────────────
+
+def _log_dim_check(req, result, cell, is_cyl, S, P, gap, ep, hL, hW, hH):
+    """
+    Compare every key STEP dimension against the engine result and request.
+    Logs INFO lines for matches (≤ 0.5 mm), WARNING lines for real mismatches.
+    Called on every export so the backend log is always auditable.
+    """
+    if is_cyl:
+        diameter  = cell.diameter_mm if cell.diameter_mm else cell.longueur_mm
+        step_L    = S * diameter + (S - 1) * gap       # cell array length (X)
+        step_W    = P * diameter + (P - 1) * gap       # cell array width  (Z)
+        step_H    = cell.hauteur_mm * 0.96              # visual body height (0.96 factor)
+        eng_H_note = "engine uses full hauteur_mm; STEP uses ×0.96 for visual clearance"
+    else:
+        step_L = S * cell.hauteur_mm + (S - 1) * gap + 2 * ep
+        step_W = P * cell.largeur_mm  + (P - 1) * gap
+        step_H = cell.longueur_mm * 0.95
+        eng_H_note = "engine uses full longueur_mm; STEP uses ×0.95 for visual clearance"
+
+    checks = [
+        # (label,                   STEP value,            engine/req value,                    known_delta_ok)
+        ("couvercle inner_L",       hL,                    req.housing_l,                        False),
+        ("couvercle inner_W",       hW,                    req.housing_l_small,                  False),
+        ("couvercle inner_H",       hH,                    req.housing_h,                        False),
+        ("couvercle outer_L",       hL + 2 * WALL_MM,      req.housing_l,                        True),
+        ("couvercle outer_H",       hH + 2 * WALL_MM,      req.housing_h,                        True),
+        ("array_L",                 step_L,                result.dimensions_raw.longueur_mm,    False),
+        ("array_W",                 step_W,                result.dimensions_raw.largeur_mm,     False),
+        ("array_H (visual)",        step_H,                result.dimensions_raw.hauteur_mm,     True),
+        ("margin_L (per side)",     (hL  - step_L) / 2,   result.marges_reelles.get("L", 0),    False),
+        ("margin_W (per side)",     (hW  - step_W) / 2,   result.marges_reelles.get("W", 0),    False),
+        ("margin_H (per side)",     (hH  - step_H) / 2,   result.marges_reelles.get("H", 0),    True),
+    ]
+
+    _log.info("── STEP dimension audit: %s  S=%d P=%d ──", cell.nom, S, P)
+    for label, step_val, eng_val, known_ok in checks:
+        diff = abs(step_val - eng_val)
+        if diff <= 0.5:
+            _log.info("  %-28s  STEP=%8.2f mm   engine=%8.2f mm   Δ=%.2f ✓", label, step_val, eng_val, diff)
+        elif known_ok:
+            _log.info("  %-28s  STEP=%8.2f mm   engine=%8.2f mm   Δ=%.2f  (expected)", label, step_val, eng_val, diff)
+        else:
+            _log.warning("  %-28s  STEP=%8.2f mm   engine=%8.2f mm   Δ=%.2f  ← MISMATCH", label, step_val, eng_val, diff)
+    _log.info("  array_H note: %s", eng_H_note)
+    _log.info("  cell_bottom_y: -hH/2 + 1.0 mm clearance from inner bottom")
+
 
 # ── Constants — keep in sync with PackAssemblyBuilder.js ─────────────────────
 WALL_MM           = 2
@@ -147,23 +199,37 @@ def generate_step_file(
         stepX = sizeX + gap
         stepZ = sizeZ + gap
 
-    yCenter = -hH / 2 + WALL_MM + bodyH / 2
+    # Floor clearance from couvercle inner bottom:
+    #   Cylindrical: bracket protrudes 2.5 mm + strip 0.5 mm → need > 3.0 mm → use 3.5 mm
+    #   Prismatic/Pouch: nothing below cell body → 1 mm sufficient
+    floor_clearance = 3.5 if is_cyl else 1.0
+    yCenter = -hH / 2 + floor_clearance + bodyH / 2
     startX  = -(S * stepX) / 2 + stepX / 2
     startZ  = -(P * stepZ) / 2 + stepZ / 2
     totalZ  = P * stepZ
 
+    _log_dim_check(req, result, cell, is_cyl, S, P, gap, ep, hL, hW, hH)
+
     asm = Assembly(name="battery_pack")
 
-    # Housing and cables excluded — STEP is for mechanical cell array integration
+    # Couvercle — named sub-assembly with 6 individual face bodies; only on ACCEPT
+    if result.verdict == VerdictEnum.ACCEPT:
+        couvercle_asm = Assembly(name="couvercle")
+        _build_couvercle(couvercle_asm, hL, hW, hH)
+        asm.add(couvercle_asm)
+
+    # Module — all cells, terminals, busbars, brackets in their own sub-assembly
+    module_asm = Assembly(name="module")
     if is_cyl:
-        _build_cylindrical_cells(asm, S, P, diameter, bodyH, yCenter, startX, startZ, stepX, stepZ)
-        _build_nickel_strips(asm, S, P, diameter, bodyH, yCenter, startX, startZ, stepX, stepZ)
-        _build_cylindrical_brackets(asm, S, P, diameter, bodyH, yCenter, startX, startZ, stepX, stepZ)
+        _build_cylindrical_cells(module_asm, S, P, diameter, bodyH, yCenter, startX, startZ, stepX, stepZ)
+        _build_nickel_strips(module_asm, S, P, diameter, bodyH, yCenter, startX, startZ, stepX, stepZ)
+        _build_cylindrical_brackets(module_asm, S, P, diameter, bodyH, yCenter, startX, startZ, stepX, stepZ)
     else:
-        _build_prismatic_cells(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, startZ, stepX, stepZ)
-        _build_prismatic_busbars(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, startZ, stepX, stepZ)
-        _build_insulation_cards(asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, stepX, stepZ, gap)
-        _build_side_plates(asm, S, P, sizeX, sizeZ, bodyH, yCenter, stepX, stepZ, gap, ep)
+        _build_prismatic_cells(module_asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, startZ, stepX, stepZ)
+        _build_prismatic_busbars(module_asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, startZ, stepX, stepZ)
+        _build_insulation_cards(module_asm, S, P, sizeX, sizeZ, bodyH, yCenter, startX, stepX, stepZ, gap)
+        _build_side_plates(module_asm, S, P, sizeX, sizeZ, bodyH, yCenter, stepX, stepZ, gap, ep)
+    asm.add(module_asm)
 
     with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as f:
         path = f.name
@@ -245,16 +311,31 @@ def _polyline_tube(pts, radius, name, color, asm):
 # LAYER BUILDERS — each matches the corresponding _build* in PackAssemblyBuilder.js
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _build_housing(asm, hL, hW, hH):
+def _build_couvercle(couvercle_asm, hL, hW, hH):
+    """
+    Complete closed enclosure split into 6 individually named face plates.
+
+    Inner cavity = hL(X) × hH(Y) × hW(Z) — exactly the configured housing space.
+    Each face plate is WALL_MM thick.  Tiling scheme (no volumetric overlap):
+      top / bottom — full outer footprint  oL × wall × oW
+      front / back — full outer X, inner height  oL × hH × wall
+      left / right — inner height and depth  wall × hH × hW
+    Corners are owned by the top/bottom plates.
+    """
     wall = WALL_MM
-    fbH  = hH / 2 - wall
-    fbY  = -hH / 2 + wall + fbH / 2
-    lrD  = hW - wall * 2
-    asm.add(_box(hL, wall, hW),   name="h_bottom", color=C_HOUSING, loc=_loc(0, -hH/2+wall/2, 0))
-    asm.add(_box(hL, fbH, wall),  name="h_front",  color=C_HOUSING, loc=_loc(0, fbY,  hW/2-wall/2))
-    asm.add(_box(hL, fbH, wall),  name="h_back",   color=C_HOUSING, loc=_loc(0, fbY, -hW/2+wall/2))
-    asm.add(_box(wall, fbH, lrD), name="h_left",   color=C_HOUSING, loc=_loc( hL/2-wall/2, fbY, 0))
-    asm.add(_box(wall, fbH, lrD), name="h_right",  color=C_HOUSING, loc=_loc(-hL/2+wall/2, fbY, 0))
+    oL   = hL + 2 * wall
+    oW   = hW + 2 * wall
+
+    faces = [
+        ("top",    _box(oL, wall, oW), _loc(0,  hH/2 + wall/2, 0)),
+        ("bottom", _box(oL, wall, oW), _loc(0, -hH/2 - wall/2, 0)),
+        ("front",  _box(oL, hH, wall), _loc(0, 0,  hW/2 + wall/2)),
+        ("back",   _box(oL, hH, wall), _loc(0, 0, -hW/2 - wall/2)),
+        ("left",   _box(wall, hH, hW), _loc( hL/2 + wall/2, 0, 0)),
+        ("right",  _box(wall, hH, hW), _loc(-hL/2 - wall/2, 0, 0)),
+    ]
+    for name, shape, loc in faces:
+        couvercle_asm.add(shape, name=name, color=C_HOUSING, loc=loc)
 
 
 # ── Cylindrical cells + terminals ─────────────────────────────────────────────
@@ -288,10 +369,10 @@ def _build_cylindrical_cells(asm, S, P, diameter, bodyH, yCenter, startX, startZ
 # ── Nickel strips (cylindrical busbars) ───────────────────────────────────────
 
 def _build_nickel_strips(asm, S, P, diameter, bodyH, yCenter, startX, startZ, stepX, stepZ):
-    bp    = BRACKET_H * 0.25   # bracket protrude = 2.5 mm
-    y_top = yCenter + bodyH/2 + max(0.3, bp) + 0.3
-    y_bot = yCenter - bodyH/2 - max(0.3, bp) - 0.3
     thick = 0.5
+    bp    = BRACKET_H * 0.25          # bracket protrudes 2.5 mm beyond cell terminal face
+    y_top = yCenter + bodyH/2 + bp + thick/2   # strip flush against bracket outer face
+    y_bot = yCenter - bodyH/2 - bp - thick/2
 
     plen  = (P-1)*stepZ + diameter if P > 1 else diameter
     strip = _box(diameter*0.6, thick, plen)

@@ -664,3 +664,288 @@ class TestInputValidation:
         r = client.post("/api/v1/calculate",
                         json={**BASE_PAYLOAD, "housing_l": "not_a_number"})
         assert r.status_code == 422
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 8. HISTORY ENDPOINTS (BF13 — consulter, BF14 — supprimer, BF15 — effacer)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestHistoryEndpoints:
+
+    def _seed(self):
+        """Run one calculation to produce a history entry."""
+        r = client.post("/api/v1/calculate", json=BASE_PAYLOAD)
+        assert r.status_code == 200
+
+    def test_history_initially_empty(self):
+        r = client.get("/api/v1/history")
+        assert r.status_code == 200
+        assert r.json()["entries"] == []
+
+    def test_history_populated_after_calculate(self):
+        self._seed()
+        entries = client.get("/api/v1/history").json()["entries"]
+        assert len(entries) == 1
+
+    def test_history_entry_required_fields(self):
+        self._seed()
+        entry = client.get("/api/v1/history").json()["entries"][0]
+        for field in ["id", "timestamp", "cell_id", "cell_nom",
+                      "nb_serie", "nb_parallele", "verdict"]:
+            assert field in entry, f"Missing field: {field}"
+
+    def test_history_entry_cell_id_matches_payload(self):
+        self._seed()
+        entry = client.get("/api/v1/history").json()["entries"][0]
+        assert entry["cell_id"] == BASE_PAYLOAD["cell_id"]
+
+    def test_history_entry_verdict_valid(self):
+        self._seed()
+        entry = client.get("/api/v1/history").json()["entries"][0]
+        assert entry["verdict"] in ("ACCEPT", "REJECT")
+
+    def test_history_most_recent_first(self):
+        self._seed()
+        self._seed()
+        entries = client.get("/api/v1/history").json()["entries"]
+        assert len(entries) == 2
+        assert entries[0]["id"] >= entries[1]["id"]
+
+    def test_delete_single_entry(self):
+        self._seed()
+        entry_id = client.get("/api/v1/history").json()["entries"][0]["id"]
+        r = client.delete(f"/api/v1/history/{entry_id}")
+        assert r.status_code == 200
+        assert r.json()["deleted"] == entry_id
+        assert client.get("/api/v1/history").json()["entries"] == []
+
+    def test_delete_nonexistent_entry_returns_404(self):
+        r = client.delete("/api/v1/history/99999")
+        assert r.status_code == 404
+
+    def test_clear_all_history(self):
+        self._seed()
+        self._seed()
+        r = client.delete("/api/v1/history")
+        assert r.status_code == 200
+        assert r.json()["deleted"] == 2
+        assert client.get("/api/v1/history").json()["entries"] == []
+
+    def test_clear_empty_history_returns_zero(self):
+        r = client.delete("/api/v1/history")
+        assert r.status_code == 200
+        assert r.json()["deleted"] == 0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 9. RECOMMENDER ENDPOINT (BF08 — recommander les meilleures cellules)
+# ═════════════════════════════════════════════════════════════════════════════
+
+RECOMMEND_PAYLOAD = {
+    "energie_cible_wh":  1000.0,
+    "tension_cible_v":   48.0,
+    "courant_cible_a":   50.0,
+    "housing_l":         2000.0,
+    "housing_l_small":   1500.0,
+    "housing_h":         300.0,
+    "marge_mm":          15.0,
+    "depth_of_discharge": 80.0,
+    "cell_gap_mm":       0.0,
+}
+
+
+class TestRecommenderEndpoint:
+
+    def test_recommend_returns_200(self):
+        r = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD)
+        assert r.status_code == 200
+
+    def test_recommend_has_matches_key(self):
+        body = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD).json()
+        assert "matches" in body
+
+    def test_recommend_matches_is_list(self):
+        body = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD).json()
+        assert isinstance(body["matches"], list)
+
+    def test_recommend_fitting_at_most_5(self):
+        body = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD).json()
+        fitting = [m for m in body["matches"] if not m["near_miss"]]
+        assert len(fitting) <= 5
+
+    def test_recommend_near_miss_at_most_3(self):
+        body = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD).json()
+        near = [m for m in body["matches"] if m["near_miss"]]
+        assert len(near) <= 3
+
+    def test_recommend_match_required_fields(self):
+        body = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD).json()
+        for match in body["matches"]:
+            for field in ["cell", "nb_serie", "nb_parallele",
+                          "fill_ratio_pct", "margin_h_mm", "near_miss"]:
+                assert field in match, f"Missing field '{field}' in CellMatch"
+
+    def test_recommend_near_miss_bool_present(self):
+        body = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD).json()
+        for match in body["matches"]:
+            assert isinstance(match["near_miss"], bool)
+
+    def test_recommend_huge_housing_has_fitting(self):
+        payload = {**RECOMMEND_PAYLOAD,
+                   "housing_l": 9999.0, "housing_l_small": 9999.0, "housing_h": 9999.0}
+        body = client.post("/api/v1/cells/recommend", json=payload).json()
+        fitting = [m for m in body["matches"] if not m["near_miss"]]
+        assert len(fitting) > 0
+
+    def test_recommend_tiny_housing_no_fitting(self):
+        payload = {**RECOMMEND_PAYLOAD,
+                   "housing_l": 5.0, "housing_l_small": 5.0, "housing_h": 5.0}
+        body = client.post("/api/v1/cells/recommend", json=payload).json()
+        fitting = [m for m in body["matches"] if not m["near_miss"]]
+        assert fitting == []
+
+    def test_recommend_missing_required_field_returns_422(self):
+        payload = {k: v for k, v in RECOMMEND_PAYLOAD.items() if k != "courant_cible_a"}
+        r = client.post("/api/v1/cells/recommend", json=payload)
+        assert r.status_code == 422
+
+    def test_recommend_fitting_fill_pct_non_negative(self):
+        body = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD).json()
+        for match in body["matches"]:
+            assert match["fill_ratio_pct"] >= 0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 10. STEP EXPORT ENDPOINT (BF06 — exporter pack STEP)
+# ═════════════════════════════════════════════════════════════════════════════
+
+cadquery_available = pytest.importorskip  # used as marker below
+
+
+class TestStepExport:
+    """STEP export uses CadQuery (heavy); skipped if cadquery is not installed."""
+
+    @classmethod
+    def _skip_if_no_cadquery(cls):
+        try:
+            import cadquery  # noqa: F401
+        except ImportError:
+            pytest.skip("CadQuery not installed in test environment")
+
+    def test_step_returns_200(self):
+        self._skip_if_no_cadquery()
+        r = client.post("/api/v1/export/step", json=BASE_PAYLOAD)
+        assert r.status_code == 200
+
+    def test_step_response_not_empty(self):
+        self._skip_if_no_cadquery()
+        r = client.post("/api/v1/export/step", json=BASE_PAYLOAD)
+        assert len(r.content) > 0
+
+    def test_step_content_type(self):
+        self._skip_if_no_cadquery()
+        r = client.post("/api/v1/export/step", json=BASE_PAYLOAD)
+        ct = r.headers.get("content-type", "")
+        assert "step" in ct or "octet-stream" in ct
+
+    def test_step_content_disposition_attachment(self):
+        self._skip_if_no_cadquery()
+        r = client.post("/api/v1/export/step", json=BASE_PAYLOAD)
+        assert "attachment" in r.headers.get("content-disposition", "")
+
+    def test_step_cell_not_found_returns_404(self):
+        self._skip_if_no_cadquery()
+        r = client.post("/api/v1/export/step", json={**BASE_PAYLOAD, "cell_id": 9999})
+        assert r.status_code == 404
+
+    def test_step_prismatic_returns_200(self):
+        self._skip_if_no_cadquery()
+        payload = {**BASE_PAYLOAD, "cell_id": 2,
+                   "energie_cible_wh": 5000.0, "tension_cible_v": 48.0,
+                   "housing_l": 2000.0, "housing_l_small": 1500.0, "housing_h": 300.0}
+        r = client.post("/api/v1/export/step", json=payload)
+        assert r.status_code == 200
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 11. REFERENCE ENDPOINTS (BF16 — fabricants, chimies, types de cellule)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestReferenceEndpoints:
+
+    def test_fabricants_returns_200(self):
+        assert client.get("/api/v1/fabricants").status_code == 200
+
+    def test_fabricants_returns_list(self):
+        assert isinstance(client.get("/api/v1/fabricants").json(), list)
+
+    def test_chimies_returns_200(self):
+        assert client.get("/api/v1/chimies").status_code == 200
+
+    def test_chimies_returns_list(self):
+        assert isinstance(client.get("/api/v1/chimies").json(), list)
+
+    def test_types_cellule_returns_200(self):
+        assert client.get("/api/v1/types-cellule").status_code == 200
+
+    def test_types_cellule_returns_list(self):
+        assert isinstance(client.get("/api/v1/types-cellule").json(), list)
+
+    def test_fabricant_entry_has_id_and_nom(self):
+        items = client.get("/api/v1/fabricants").json()
+        if items:
+            assert "id" in items[0] and "nom" in items[0]
+
+    def test_chimie_entry_has_id_and_nom(self):
+        items = client.get("/api/v1/chimies").json()
+        if items:
+            assert "id" in items[0] and "nom" in items[0]
+
+    def test_types_cellule_entry_has_id_and_nom(self):
+        items = client.get("/api/v1/types-cellule").json()
+        if items:
+            assert "id" in items[0] and "nom" in items[0]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 12. PERFORMANCE — temps de réponse sous seuils acceptables
+# ═════════════════════════════════════════════════════════════════════════════
+
+import time
+
+
+class TestPerformance:
+
+    def test_health_under_200ms(self):
+        t = time.perf_counter()
+        client.get("/api/v1/health")
+        assert time.perf_counter() - t < 0.2
+
+    def test_catalogue_list_under_500ms(self):
+        t = time.perf_counter()
+        r = client.get("/api/v1/cells")
+        elapsed = time.perf_counter() - t
+        assert r.status_code == 200
+        assert elapsed < 0.5, f"GET /cells took {elapsed:.3f}s"
+
+    def test_calculate_under_2s(self):
+        t = time.perf_counter()
+        r = client.post("/api/v1/calculate", json=BASE_PAYLOAD)
+        elapsed = time.perf_counter() - t
+        assert r.status_code == 200
+        assert elapsed < 2.0, f"POST /calculate took {elapsed:.3f}s"
+
+    def test_recommend_under_5s(self):
+        t = time.perf_counter()
+        r = client.post("/api/v1/cells/recommend", json=RECOMMEND_PAYLOAD)
+        elapsed = time.perf_counter() - t
+        assert r.status_code == 200
+        assert elapsed < 5.0, f"POST /recommend took {elapsed:.3f}s"
+
+    def test_history_list_under_500ms(self):
+        client.post("/api/v1/calculate", json=BASE_PAYLOAD)
+        t = time.perf_counter()
+        r = client.get("/api/v1/history")
+        elapsed = time.perf_counter() - t
+        assert r.status_code == 200
+        assert elapsed < 0.5, f"GET /history took {elapsed:.3f}s"

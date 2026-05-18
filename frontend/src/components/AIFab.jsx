@@ -1,201 +1,421 @@
-import React, { useState, useRef, useCallback } from 'react'
-import { apiService } from '../services/api'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { useT, useLang } from '../i18n'
 
+const CHAT_URL = 'http://127.0.0.1:8000/api/v1/chat'
+
+// ── Quick-start chips (context-aware, labels translated via t()) ──────────────
+function getSuggestions(result, t) {
+  const chips = []
+  if (result?.verdict === 'REJECT') {
+    chips.push({ label: t('ai.chip.why_rejected'), msg: 'Why was my design rejected? Which axis is the binding constraint?' })
+    chips.push({ label: t('ai.chip.how_fix'),      msg: 'Give me concrete steps to fix the rejection for my current design.' })
+  } else if (result?.verdict === 'ACCEPT') {
+    chips.push({ label: t('ai.chip.explain'),  msg: 'Explain my current result — is this design well optimised?' })
+    chips.push({ label: t('ai.chip.improve'),  msg: 'How could I improve the fill ratio or free up margin in my current design?' })
+  }
+  chips.push({ label: t('ai.chip.how_use'), msg: 'Give me a quick guide on how to use this application to size a battery pack.' })
+  chips.push({ label: t('ai.chip.dod'),     msg: 'What is Depth of Discharge and what value should I use for an EV application?' })
+  return chips
+}
+
+// ── Styles (defined outside component — static objects) ──────────────────────
+const S = {
+  fab: {
+    position: 'fixed', bottom: 28, right: 28,
+    width: 52, height: 52, borderRadius: '50%',
+    background: 'linear-gradient(135deg, #1d4ed8, #0ea5e9)',
+    border: 'none', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 4px 20px rgba(29,78,216,0.5)', zIndex: 9000,
+    transition: 'transform 0.15s, box-shadow 0.15s',
+  },
+  panel: {
+    position: 'fixed', bottom: 92, right: 28, zIndex: 9500,
+    width: 380, height: 500,
+    background: '#1a1c23', border: '1px solid #2a2c33',
+    borderRadius: 12, boxShadow: '0 16px 60px rgba(0,0,0,0.6)',
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '11px 14px', borderBottom: '1px solid #2a2c33', flexShrink: 0,
+  },
+  messages: {
+    flex: 1, overflowY: 'auto', padding: '10px 12px',
+    display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0,
+  },
+  userBubble: {
+    alignSelf: 'flex-end',
+    background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.25)',
+    borderRadius: '10px 10px 2px 10px',
+    padding: '7px 11px', maxWidth: '86%',
+    color: '#e2e8f0', fontSize: '0.82rem', lineHeight: 1.55,
+    wordBreak: 'break-word',
+  },
+  aiBubble: {
+    alignSelf: 'flex-start',
+    background: 'rgba(255,255,255,0.03)', border: '1px solid #2a2c33',
+    borderRadius: '10px 10px 10px 2px',
+    padding: '7px 11px', maxWidth: '93%',
+    color: '#cbd5e1', fontSize: '0.82rem', lineHeight: 1.65,
+    wordBreak: 'break-word', whiteSpace: 'pre-wrap',
+  },
+  inputRow: {
+    display: 'flex', gap: 7, padding: '9px 11px',
+    borderTop: '1px solid #2a2c33', flexShrink: 0, alignItems: 'flex-end',
+  },
+  textarea: {
+    flex: 1, background: '#252830', border: '1px solid #3a3c44',
+    borderRadius: 8, color: '#e2e8f0', fontSize: '0.82rem',
+    padding: '7px 10px', resize: 'none',
+    minHeight: 34, maxHeight: 96, lineHeight: 1.5,
+    outline: 'none', fontFamily: 'inherit',
+  },
+}
+
+// ── Chat bubble with streaming cursor ────────────────────────────────────────
+function AiBubble({ content, streaming }) {
+  const isEmpty = content === '' && streaming
+  return (
+    <div style={S.aiBubble}>
+      {isEmpty
+        ? (
+          <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+            {[0, 1, 2].map(i => (
+              <span key={i} style={{
+                width: 4, height: 4, borderRadius: '50%', background: '#64748b',
+                display: 'inline-block',
+                animation: `tdot 1.2s ${i * 0.2}s ease-in-out infinite`,
+              }} />
+            ))}
+          </span>
+        )
+        : content
+      }
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function AIFab({ cell, form, result }) {
   const t = useT()
   const { lang } = useLang()
-  const [open, setOpen]       = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [text, setText]       = useState(null)
-  const [error, setError]     = useState(null)
-  const fetchedForRef         = useRef(null)
-  const resultKey = result
-    ? `${result.nb_serie}-${result.nb_parallele}-${cell?.id}-${result.verdict}-${result.energie_reelle_wh}-${lang}`
-    : null
+  const [open, setOpen]         = useState(false)
+  const [messages, setMessages] = useState([])
+  const [input, setInput]       = useState('')
+  const [streaming, setStreaming] = useState(false)
+  const bottomRef  = useRef(null)
+  const textaRef   = useRef(null)
+  const abortRef   = useRef(null)
 
-  const fetchExplanation = useCallback(async (key) => {
-    if (!result || !cell) return
-    if (fetchedForRef.current === key) return
+  // Auto-scroll on new content
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
-    setLoading(true)
-    setText(null)
-    setError(null)
+  const sendMessage = useCallback(async (text) => {
+    const userText = text.trim()
+    if (!userText || streaming) return
 
-    const toNum = (v, fb = 0) => {
-      const n = parseFloat(String(v ?? '').replace(',', '.'))
-      return isNaN(n) ? fb : n
-    }
+    const userMsg = { role: 'user', content: userText }
+    const history = [...messages, userMsg]
+
+    setMessages([...history, { role: 'assistant', content: '' }])
+    setInput('')
+    if (textaRef.current) textaRef.current.style.height = 'auto'
+    setStreaming(true)
+
+    const controller = new AbortController()
+    abortRef.current = controller
 
     const payload = {
-      cell_id:             cell.id,
+      messages: history,
       lang,
-      energie_cible_wh:    form.energie_cible_wh != null && form.energie_cible_wh !== ''
-                             ? toNum(form.energie_cible_wh) : undefined,
-      tension_cible_v:     form.tension_cible_v  != null && form.tension_cible_v  !== ''
-                             ? toNum(form.tension_cible_v)  : undefined,
-      courant_cible_a:     toNum(form.courant_cible_a),
-      depth_of_discharge:  toNum(form.depth_of_discharge, 80),
-      cycles_per_day:      toNum(form.cycles_per_day, 1),
-      housing_l:           toNum(form.housing_l),
-      housing_l_small:     toNum(form.housing_l_small),
-      housing_h:           toNum(form.housing_h),
-      nb_serie:            result.nb_serie,
-      nb_parallele:        result.nb_parallele,
-      verdict:             result.verdict,
-      justification:       result.justification ?? undefined,
-      tension_totale_v:    result.tension_totale_v ?? undefined,
-      energie_reelle_wh:   result.energie_reelle_wh ?? undefined,
-      pack_l_mm:           result.dimensions_raw?.longueur_mm ?? undefined,
-      pack_w_mm:           result.dimensions_raw?.largeur_mm  ?? undefined,
-      pack_h_mm:           result.dimensions_raw?.hauteur_mm  ?? undefined,
-      margin_l_mm:         result.marges_reelles?.L ?? undefined,
-      margin_w_mm:         result.marges_reelles?.W ?? undefined,
-      margin_h_mm:         result.marges_reelles?.H ?? undefined,
-      lifetime_years:      result.lifetime_years      ?? undefined,
-      c_rate_actual:       result.c_rate_actual       ?? undefined,
-      derating_factor_pct: result.derating_factor_pct ?? undefined,
-      c_rate_warning:      result.c_rate_warning      ?? undefined,
+      cell_id:     cell?.id ?? null,
+      form_data:   form ? {
+        housing_l:           form.housing_l,
+        housing_l_small:     form.housing_l_small,
+        housing_h:           form.housing_h,
+        energie_cible_wh:    form.energie_cible_wh,
+        tension_cible_v:     form.tension_cible_v,
+        courant_cible_a:     form.courant_cible_a,
+        depth_of_discharge:  form.depth_of_discharge,
+        marge_mm:            form.marge_mm,
+        cell_gap_mm:         form.cell_gap_mm,
+        config_mode:         form.config_mode,
+      } : null,
+      result_data: result ? {
+        nb_serie:             result.nb_serie,
+        nb_parallele:         result.nb_parallele,
+        verdict:              result.verdict,
+        justification:        result.justification,
+        marges_reelles:       result.marges_reelles,
+        taux_occupation_pct:  result.taux_occupation_pct,
+        energie_reelle_wh:    result.energie_reelle_wh,
+        tension_totale_v:     result.tension_totale_v,
+        lifetime_years:       result.lifetime_years,
+        c_rate_actual:        result.c_rate_actual,
+      } : null,
     }
 
     try {
-      const res = await apiService.explainResult(payload)
-      setText(res.data.explanation)
-      fetchedForRef.current = key
-    } catch (e) {
-      const detail = e.response?.data?.detail ?? ''
-      if (detail.includes('rate-limited')) {
-        setError(t('ai.busy'))
-      } else if (detail.includes('API key') || detail.includes('OPENROUTER')) {
-        setError(t('ai.no_key'))
-      } else {
-        setError(detail || t('ai.error'))
+      const response = await fetch(CHAT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+      const reader  = response.body.getReader()
+      const decoder = new TextDecoder()
+      let   buffer  = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() // keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const raw = line.slice(6).trim()
+          if (raw === '[DONE]') break
+
+          try {
+            const json = JSON.parse(raw)
+
+            // Provider sent an error object
+            if (json.error) {
+              setMessages(prev => {
+                const u = [...prev]
+                u[u.length - 1] = { role: 'assistant', content: `⚠ ${json.error}` }
+                return u
+              })
+              return
+            }
+
+            const delta = json.choices?.[0]?.delta?.content || ''
+            if (delta) {
+              setMessages(prev => {
+                const u = [...prev]
+                const last = u[u.length - 1]
+                u[u.length - 1] = { ...last, content: last.content + delta }
+                return u
+              })
+            }
+          } catch { /* skip malformed SSE line */ }
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setMessages(prev => {
+          const u = [...prev]
+          u[u.length - 1] = {
+            role: 'assistant',
+            content: t('ai.conn_error'),
+          }
+          return u
+        })
       }
     } finally {
-      setLoading(false)
+      setStreaming(false)
+      abortRef.current = null
     }
-  }, [result, cell, form, lang, t])
+  }, [messages, streaming, cell, form, result, lang])
 
-  if (!result) return null
+  const handleSend = () => sendMessage(input)
 
-  const handleOpen = () => {
-    setOpen(true)
-    fetchExplanation(resultKey)
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
   }
+
+  const handleInputChange = (e) => {
+    setInput(e.target.value)
+    e.target.style.height = 'auto'
+    e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'
+  }
+
+  const clearChat = () => {
+    abortRef.current?.abort()
+    setMessages([])
+    setStreaming(false)
+  }
+
+  const suggestions = getSuggestions(result, t)
+  const isStreaming  = streaming
+  const sendDisabled = isStreaming || !input.trim()
 
   return (
     <>
-      {/* FAB button */}
+      {/* ── FAB button ── */}
       <button
-        onClick={handleOpen}
-        title="AI Analysis"
-        style={{
-          position: 'fixed',
-          bottom: 28,
-          right: 28,
-          width: 52,
-          height: 52,
-          borderRadius: '50%',
-          background: 'linear-gradient(135deg, #1d4ed8, #0ea5e9)',
-          border: 'none',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 4px 20px rgba(29,78,216,0.5)',
-          zIndex: 9000,
-          transition: 'transform 0.15s, box-shadow 0.15s',
-        }}
+        onClick={() => setOpen(o => !o)}
+        title="AI Assistant"
+        style={S.fab}
         onMouseEnter={e => {
-          e.currentTarget.style.transform = 'scale(1.08)'
-          e.currentTarget.style.boxShadow = '0 6px 28px rgba(29,78,216,0.65)'
+          e.currentTarget.style.transform  = 'scale(1.08)'
+          e.currentTarget.style.boxShadow  = '0 6px 28px rgba(29,78,216,0.65)'
         }}
         onMouseLeave={e => {
-          e.currentTarget.style.transform = 'scale(1)'
-          e.currentTarget.style.boxShadow = '0 4px 20px rgba(29,78,216,0.5)'
+          e.currentTarget.style.transform  = 'scale(1)'
+          e.currentTarget.style.boxShadow  = '0 4px 20px rgba(29,78,216,0.5)'
         }}
       >
-        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 16v-4M12 8h.01" />
+        {/* Chat bubble icon */}
+        <svg width={22} height={22} viewBox="0 0 24 24" fill="none"
+          stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
       </button>
 
-      {/* Popup overlay */}
+      {/* ── Chat panel ── */}
       {open && (
-        <div
-          style={{
-            position: 'fixed', inset: 0,
-            background: 'rgba(0,0,0,0.55)',
-            zIndex: 9500,
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end',
-            padding: '0 28px 96px',
-          }}
-          onClick={() => setOpen(false)}
-        >
-          <div
-            style={{
-              background: '#1a1c23',
-              border: '1px solid #2a2c33',
-              borderRadius: 12,
-              width: 380,
-              maxHeight: 420,
-              boxShadow: '0 16px 60px rgba(0,0,0,0.6)',
-              display: 'flex', flexDirection: 'column',
-              overflow: 'hidden',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '14px 16px',
-              borderBottom: '1px solid #2a2c33',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  background: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
-                  </svg>
-                </div>
-                <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#f1f5f9' }}>{t('ai.title')}</span>
+        <div style={S.panel}>
+
+          {/* Header */}
+          <div style={S.header}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: '50%',
+                background: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width={12} height={12} viewBox="0 0 24 24" fill="none"
+                  stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
               </div>
-              <button
-                onClick={() => setOpen(false)}
-                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '1rem', padding: '4px 6px', borderRadius: 4, lineHeight: 1 }}
-              >✕</button>
+              <span style={{ fontWeight: 700, fontSize: '0.87rem', color: '#f1f5f9' }}>
+                {t('ai.chat_title')}
+              </span>
             </div>
 
-            {/* Body */}
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px' }}>
-              {loading && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {[95, 88, 92, 70].map((w, i) => (
-                    <div key={i} style={{
-                      height: 12, borderRadius: 6,
-                      background: 'rgba(255,255,255,0.07)',
-                      width: `${w}%`,
-                      animation: 'pulse 1.5s ease-in-out infinite',
-                    }} />
+            <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+              {messages.length > 0 && (
+                <button
+                  onClick={clearChat}
+                  style={{
+                    background: 'none', border: '1px solid #2a2c33',
+                    color: '#64748b', cursor: 'pointer',
+                    fontSize: '0.71rem', padding: '3px 8px', borderRadius: 5,
+                  }}
+                >
+                  {t('ai.new_chat')}
+                </button>
+              )}
+              <button
+                onClick={() => setOpen(false)}
+                style={{
+                  background: 'none', border: 'none', color: '#64748b',
+                  cursor: 'pointer', fontSize: '1rem', padding: '3px 6px',
+                  borderRadius: 4, lineHeight: 1,
+                }}
+              >✕</button>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div style={S.messages}>
+            {messages.length === 0 && (
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: 10,
+                paddingTop: 6, alignItems: 'center',
+              }}>
+                <p style={{
+                  color: '#475569', fontSize: '0.78rem',
+                  margin: 0, textAlign: 'center', lineHeight: 1.5,
+                }}>
+                  {t('ai.empty_hint')}
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => sendMessage(s.msg)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 14,
+                        border: '1px solid #2a2c33',
+                        background: 'rgba(255,255,255,0.03)',
+                        color: '#94a3b8', fontSize: '0.75rem',
+                        cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.borderColor = '#3b82f6'
+                        e.currentTarget.style.color = '#e2e8f0'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = '#2a2c33'
+                        e.currentTarget.style.color = '#94a3b8'
+                      }}
+                    >
+                      {s.label}
+                    </button>
                   ))}
                 </div>
-              )}
-              {error && (
-                <p style={{ color: '#f87171', fontSize: '0.82rem', margin: 0 }}>{error}</p>
-              )}
-              {text && (
-                <p style={{ color: '#cbd5e1', fontSize: '0.84rem', lineHeight: 1.65, margin: 0, wordBreak: 'break-word' }}>{text}</p>
-              )}
-            </div>
+              </div>
+            )}
+
+            {messages.map((msg, i) => (
+              msg.role === 'user'
+                ? <div key={i} style={S.userBubble}>{msg.content}</div>
+                : <AiBubble key={i} content={msg.content} streaming={isStreaming && i === messages.length - 1} />
+            ))}
+
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div style={S.inputRow}>
+            <textarea
+              ref={textaRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={t('ai.placeholder')}
+              style={{
+                ...S.textarea,
+                opacity: isStreaming ? 0.5 : 1,
+              }}
+              rows={1}
+              disabled={isStreaming}
+            />
+            <button
+              onClick={handleSend}
+              disabled={sendDisabled}
+              style={{
+                width: 34, height: 34, flexShrink: 0, borderRadius: 7,
+                background: sendDisabled
+                  ? '#252830'
+                  : 'linear-gradient(135deg, #1d4ed8, #0ea5e9)',
+                border: '1px solid #3a3c44', cursor: sendDisabled ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background 0.15s',
+              }}
+            >
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none"
+                stroke={sendDisabled ? '#475569' : '#fff'}
+                strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
           </div>
         </div>
       )}
 
-      <style>{`@keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.8} }`}</style>
+      <style>{`
+        @keyframes tdot {
+          0%, 60%, 100% { opacity: 0.2; transform: translateY(0) }
+          30%            { opacity: 1;   transform: translateY(-2px) }
+        }
+      `}</style>
     </>
   )
 }

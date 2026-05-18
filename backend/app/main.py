@@ -542,6 +542,59 @@ def clear_import_config():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# AI CHAT (streaming multi-turn)
+# ══════════════════════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel as _PydanticBase
+
+class _ChatMessage(_PydanticBase):
+    role: str
+    content: str
+
+class _ChatRequest(_PydanticBase):
+    messages: List[_ChatMessage]
+    lang: str = "en"
+    cell_id: Optional[int] = None
+    form_data: Optional[dict] = None
+    result_data: Optional[dict] = None
+
+
+@app.post(
+    "/api/v1/chat",
+    tags=["AI"],
+    summary="Streaming multi-turn chat assistant",
+)
+async def chat_stream(req: _ChatRequest, db: Session = Depends(get_db)):
+    """
+    Accepts a conversation history and streams back the next assistant turn
+    as Server-Sent Events (text/event-stream, OpenAI delta format).
+    Injects the current cell / form / result as context into the system prompt.
+    """
+    from app.chat import stream_chat, build_context
+
+    cell = None
+    if req.cell_id:
+        cell = db.query(Cellule).filter(Cellule.id == req.cell_id).first()
+
+    context = build_context(
+        cell=cell,
+        form_data=req.form_data,
+        result_data=req.result_data,
+    )
+
+    messages = [m.model_dump() for m in req.messages]
+
+    return StreamingResponse(
+        stream_chat(messages, context=context, lang=req.lang),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # AI EXPLAINER
 # ══════════════════════════════════════════════════════════════════════════════
 
