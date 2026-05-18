@@ -14,6 +14,14 @@ Run:
     uvicorn app.main:app --reload --port 8000
 """
 
+# Inject Windows certificate store so Python trusts corporate CAs (e.g. Zscaler).
+# Must run before any SSL connection is made — including uvicorn's own startup.
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass  # truststore not installed — bundled certs used (run: pip install truststore)
+
 import json
 import logging
 from datetime import datetime
