@@ -7,6 +7,9 @@ Without it, spawning the frozen exe triggers an infinite loop of child processes
 import multiprocessing
 multiprocessing.freeze_support()
 
+import truststore
+truststore.inject_into_ssl()  # use Windows cert store — trusts Zscaler CA
+
 import uvicorn
 from app.main import app
 

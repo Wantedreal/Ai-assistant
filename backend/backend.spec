@@ -84,6 +84,8 @@ a = Analysis(
         # python-dotenv — loads GROQ_API_KEY / OPENROUTER_API_KEY from .env
         'dotenv',
         'dotenv.main',
+        # truststore — makes Python use Windows cert store (trusts Zscaler CA)
+        'truststore',
         # collected hidden imports from each library
         *reportlab_hidden,
         *cq_hidden,
