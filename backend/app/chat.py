@@ -269,10 +269,7 @@ async def stream_chat(
         )
         return
 
-    logger.info("chat: %d providers to try, groq_key=%s openrouter_key=%s",
-                len(attempts),
-                "yes" if _groq_key() else "NO",
-                "yes" if _openrouter_key() else "NO")
+    print(f"[chat] {len(attempts)} providers | groq={'yes' if _groq_key() else 'NO'} openrouter={'yes' if _openrouter_key() else 'NO'}", flush=True)
 
     errors: list[str] = []
     for provider, model, key in attempts:
@@ -302,7 +299,7 @@ async def stream_chat(
                 ) as resp:
                     if resp.status_code in (429, 503):
                         err = f"{provider}/{model}: HTTP {resp.status_code}"
-                        logger.warning("chat skip: %s", err)
+                        print(f"[chat] skip: {err}", flush=True)
                         errors.append(err)
                         continue
                     resp.raise_for_status()
@@ -312,10 +309,10 @@ async def stream_chat(
             return  # success — done
         except Exception as exc:
             err = f"{provider}/{model}: {type(exc).__name__}: {exc}"
-            logger.warning("chat skip: %s", err)
+            print(f"[chat] skip: {err}", flush=True)
             errors.append(err)
             continue
 
-    summary = " | ".join(errors[:3]) if errors else "unknown"
-    logger.error("chat: all providers failed — %s", summary)
-    yield f'data: {{"error": "AI unavailable. First error: {errors[0] if errors else summary}"}}\n\n'
+    summary = errors[0] if errors else "unknown"
+    print(f"[chat] ALL FAILED. First error: {summary}", flush=True)
+    yield f'data: {{"error": "AI unavailable. Error: {summary}"}}\n\n'
