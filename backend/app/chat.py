@@ -13,7 +13,11 @@ Keys: set GROQ_API_KEY in backend/.env  (preferred)
 
 import os
 import httpx
+from pathlib import Path
 from typing import AsyncIterator, Optional
+
+# backend/.env — resolved relative to this file so it works regardless of cwd
+_ENV_PATH = Path(__file__).resolve().parent.parent / '.env'
 
 # ── Embedded keys — fallback when .env is absent (e.g. another dev machine) ──
 # .env takes priority; these are read only if the env vars are not set.
@@ -133,7 +137,7 @@ _SYSTEM_PROMPT = (
 def _load_env() -> None:
     try:
         from dotenv import load_dotenv
-        load_dotenv()
+        load_dotenv(dotenv_path=_ENV_PATH)
     except ImportError:
         pass
 

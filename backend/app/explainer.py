@@ -14,9 +14,12 @@ Rate limit on free tier: ~200 requests/day per key (ample for internal use).
 """
 
 import os
+from pathlib import Path
 from typing import Optional
 
 import httpx
+
+_ENV_PATH = Path(__file__).resolve().parent.parent / '.env'
 
 # ── Embedded key for the production build ─────────────────────────────────────
 # Set OPENROUTER_API_KEY in backend/.env (preferred) or replace the empty string
@@ -54,7 +57,7 @@ def _get_key() -> str:
     # 1. Environment variable / .env file
     try:
         from dotenv import load_dotenv
-        load_dotenv()
+        load_dotenv(dotenv_path=_ENV_PATH)
     except ImportError:
         pass
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
