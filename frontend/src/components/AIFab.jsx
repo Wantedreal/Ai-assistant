@@ -31,7 +31,8 @@ const S = {
   },
   panel: {
     position: 'fixed', bottom: 92, right: 28, zIndex: 9500,
-    width: 380, height: 500,
+    width: 'min(380px, calc(100vw - 56px))',
+    height: 'min(500px, calc(100vh - 120px))',
     background: '#1a1c23', border: '1px solid #2a2c33',
     borderRadius: 12, boxShadow: '0 16px 60px rgba(0,0,0,0.6)',
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -256,6 +257,7 @@ export default function AIFab({ cell, form, result }) {
     <>
       {/* ── FAB button ── */}
       <button
+        data-ai-fab=""
         onClick={() => setOpen(o => !o)}
         title="AI Assistant"
         style={S.fab}
@@ -277,7 +279,7 @@ export default function AIFab({ cell, form, result }) {
 
       {/* ── Chat panel ── */}
       {open && (
-        <div style={S.panel}>
+        <div data-ai-panel="" style={S.panel}>
 
           {/* Header */}
           <div style={S.header}>
@@ -414,6 +416,14 @@ export default function AIFab({ cell, form, result }) {
         @keyframes tdot {
           0%, 60%, 100% { opacity: 0.2; transform: translateY(0) }
           30%            { opacity: 1;   transform: translateY(-2px) }
+        }
+        /* Tighter margins on small / narrow windows */
+        @media (max-width: 480px) {
+          [data-ai-panel] { right: 8px !important; bottom: 80px !important; }
+          [data-ai-fab]   { right: 8px !important; bottom: 12px !important; }
+        }
+        @media (max-height: 500px) {
+          [data-ai-panel] { bottom: 70px !important; }
         }
       `}</style>
     </>
