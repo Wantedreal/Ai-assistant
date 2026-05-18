@@ -4,11 +4,11 @@ chat.py
 Streaming multi-turn chat assistant for the Battery Pack Designer.
 
 Provider priority:
-  1. Anthropic Claude  — set ANTHROPIC_API_KEY in backend/.env (corporate PC)
-  2. Groq              — embedded key, free, fast (home/personal PC)
-  3. OpenRouter        — embedded key, free fallback chain
+  1. Capgemini AI Gateway  — set CAPGEMINI_API_KEY in backend/.env (corporate PC)
+  2. Groq                  — embedded key, free, fast (home/personal PC)
+  3. OpenRouter            — embedded key, free fallback chain
 
-On corporate networks (Zscaler): put ANTHROPIC_API_KEY in backend/.env.
+On corporate networks (Zscaler): put CAPGEMINI_API_KEY in backend/.env.
 On other machines: Groq/OpenRouter keys are embedded — no setup needed.
 """
 
@@ -34,6 +34,9 @@ _OPENROUTER_EMBEDDED: str = (
     "sk-or-v1-15d24a0e5bc643f99842ad7add1793" +
     "40e1fb009ae5199ca9d0fa6caa543c1170"
 )
+
+_CAPGEMINI_URL  = "https://api.generative.engine.capgemini.com/v1/chat/completions"
+_CAPGEMINI_MODEL = "anthropic.claude-sonnet-4-6"
 
 _GROQ_URL       = "https://api.groq.com/openai/v1/chat/completions"
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -153,9 +156,9 @@ def _load_env() -> None:
         pass
 
 
-def _anthropic_key() -> Optional[str]:
+def _capgemini_key() -> Optional[str]:
     _load_env()
-    return os.environ.get("ANTHROPIC_API_KEY", "").strip() or None
+    return os.environ.get("CAPGEMINI_API_KEY", "").strip() or None
 
 
 def _groq_key() -> Optional[str]:
@@ -258,31 +261,36 @@ async def stream_chat(
 
     errors: list[str] = []
 
-    # ── 1. Anthropic Claude (corporate PC with ANTHROPIC_API_KEY in .env) ──────
-    ak = _anthropic_key()
-    if ak:
-        print(f"[chat] trying anthropic/claude-sonnet-4-6", flush=True)
+    # ── 1. Capgemini AI Gateway (corporate PC with CAPGEMINI_API_KEY in .env) ──
+    ck = _capgemini_key()
+    if ck:
+        print(f"[chat] trying capgemini/{_CAPGEMINI_MODEL}", flush=True)
         try:
-            import anthropic as _anthropic_sdk
-            http_client = httpx.AsyncClient(verify=False, proxy=proxy, timeout=60.0)
-            aclient = _anthropic_sdk.AsyncAnthropic(
-                api_key=ak,
-                http_client=http_client,
-            )
-            async with aclient.messages.stream(
-                model="claude-sonnet-4-6",
-                max_tokens=1024,
-                system=system_content,
-                messages=messages,
-                temperature=0.3,
-            ) as stream:
-                async for text in stream.text_stream:
-                    chunk = json.dumps({"choices": [{"delta": {"content": text}}]})
-                    yield f"data: {chunk}\n\n"
-            yield "data: [DONE]\n\n"
+            full_messages_cap = [{"role": "system", "content": system_content}] + messages
+            payload_cap = {
+                "model": _CAPGEMINI_MODEL,
+                "messages": full_messages_cap,
+                "stream": True,
+                "max_tokens": 1024,
+                "temperature": 0.3,
+            }
+            headers_cap = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {ck}",
+            }
+            async with _make_client(proxy) as client:
+                async with client.stream(
+                    "POST", _CAPGEMINI_URL, headers=headers_cap, json=payload_cap
+                ) as resp:
+                    if resp.status_code not in (200,):
+                        body = await resp.aread()
+                        raise Exception(f"HTTP {resp.status_code}: {body[:200].decode(errors='replace')}")
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data: "):
+                            yield line + "\n\n"
             return
         except Exception as exc:
-            err = f"anthropic/claude-sonnet-4-6: {type(exc).__name__}: {exc}"
+            err = f"capgemini/{_CAPGEMINI_MODEL}: {type(exc).__name__}: {exc}"
             print(f"[chat] skip: {err}", flush=True)
             errors.append(err)
 
