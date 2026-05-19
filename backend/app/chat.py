@@ -35,8 +35,8 @@ _OPENROUTER_EMBEDDED: str = (
     "40e1fb009ae5199ca9d0fa6caa543c1170"
 )
 
-_CAPGEMINI_URL  = "https://api.generative.engine.capgemini.com/v1/chat/completions"
-_CAPGEMINI_MODEL = "anthropic.claude-sonnet-4-6"
+_CAPGEMINI_URL  = "https://openai.generative.engine.capgemini.com/v1/chat/completions"
+_CAPGEMINI_MODEL = "global.anthropic.claude-sonnet-4-6"
 
 _GROQ_URL       = "https://api.groq.com/openai/v1/chat/completions"
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
