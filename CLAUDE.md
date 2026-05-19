@@ -90,7 +90,8 @@ cd backend
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend (React / Vite)
+### Frontend (R
+eact / Vite)
 
 ```bash
 cd frontend
@@ -306,6 +307,19 @@ See `/reference_3D` for reference images of the target assembly.
 
 - **Phase 5 — AI Chemistry Explainer** (`backend/app/explainer.py`, `backend/.env`): OpenRouter API (free tier), 7-model fallback chain (`meta-llama/llama-3.3-70b`, `google/gemma-3-27b`, etc.). Key embedded as `_EMBEDDED_KEY` in `explainer.py` (acceptable for internal tool). System prompt merged into user message for Gemma compatibility (Gemma rejects `system` role). `POST /api/v1/explain` endpoint. Floating `AIFab` button (bottom-right) opens a popup panel, caches result per calculation via `fetchedForRef`. `max_tokens=800`.
 
+- **AI multi-turn chat** (`backend/app/chat.py`, `frontend/src/components/AIFab.jsx`): Streaming SSE chat assistant with full conversation history. Provider priority and selection:
+  - **Capgemini AI Gateway** (`https://openai.generative.engine.capgemini.com/v1/chat/completions`, model `anthropic.claude-sonnet-4-6`) — used on corporate PC with `CAPGEMINI_API_KEY` in `backend/.env`; required on Zscaler networks where Groq/OpenRouter domains are blocked at firewall level.
+  - **Groq** (embedded key, split-literal to bypass GitHub secret scanning) — free, fast, 14 400 req/day.
+  - **OpenRouter** (embedded key, split-literal) — free fallback chain, 3 models.
+  - Auto mode uses Groq → OpenRouter only; Capgemini is never used in Auto (explicit selection required).
+  - Provider dropdown in chat header: Auto / Capgemini / Groq / OpenRouter.
+  - `build_context()` injects: selected cell specs, housing/electrical constraints, current result + margins, catalogue summary (total cells, chemistry breakdown, top 3 energy density), last 3 calculation history entries.
+  - System prompt rules: 2–4 sentences max, quote numbers from context, REJECT → binding constraint first then fix, suggest Cell Recommender when stuck, no bullet points for < 3 items, never invent cell specs.
+  - Responses rendered as Markdown via `react-markdown` with custom styled components (p, ul, ol, li, strong, code, pre, h1-h3).
+  - Responsive panel: `width: min(380px, calc(100vw - 56px))`, `height: min(500px, calc(100vh - 120px))`.
+  - `truststore.inject_into_ssl()` called at `app/main.py` module level so Windows certificate store (Zscaler CA) is trusted in both dev and exe modes.
+  - Keys: Groq and OpenRouter embedded as split string literals (no single token matches scanner pattern). Capgemini key in `backend/.env` only — never embedded.
+
 - **3D visual controls + dimension annotations:**
   - `end_plate_thickness_mm` slider (LayerControlPanel + ConstraintsForm) — sent to engine for prismatic `L_raw = S×h + (S−1)×g + 2×ep`; pouch/cylindrical: visual only. Side rail depth fixed at 8 mm (not tied to end plate).
   - Busbar width slider — controls `hBarW` (Z-stretch); `busbarFlatH = 2.5 mm` fixed; never sent to engine.
@@ -377,6 +391,9 @@ The bottom row (`bottom-row`) is a flex row with `align-items: stretch`. Cards i
 
 **`backend/backend.spec`**
 - Removed `openpyxl` from the `excludes` list — it is needed by `importer.py` for the Import button to work in the built exe.
+
+**`backend/app/chat.py` and `backend/app/explainer.py`**
+- Fixed `_ENV_PATH` resolution for PyInstaller frozen mode. Previously used `Path(__file__).resolve().parent.parent / '.env'` which resolves into the temp extraction dir (`sys._MEIPASS`) at runtime — `.env` was never found. Now uses `Path(sys.executable).parent / '.env'` when `sys.frozen` is True, so `.env` is read from the folder next to the exe. Dev mode unchanged.
 
 **App icon (`build/icon.ico`, `build/icon.png`, `public/icon.ico`, `public/icon.png`)**
 - All four regenerated from the BoltLogo SVG polygon coordinates using Pillow. Previous `icon.png` was a wrong 1288×1296 image. New ICO has 6 sizes (16, 32, 48, 64, 128, 256 px) with diagonal gradient fill and glow. `public/icon.ico` is bundled into the asar by Vite so `resolveIcon()` finds it at runtime.

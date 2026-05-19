@@ -29,6 +29,14 @@ if not exist "dist\backend\backend.exe" (
     exit /b 1
 )
 
+:: Copy .env next to the backend exe so it can read CAPGEMINI_API_KEY
+if exist ".env" (
+    echo  [env] Copying .env into dist\backend\...
+    copy /y ".env" "dist\backend\.env" >nul
+) else (
+    echo  [env] WARNING: backend\.env not found — AI chat will use embedded keys only.
+)
+
 echo.
 echo  [2/3] Building React frontend...
 cd /d "%~dp0frontend"
@@ -57,6 +65,12 @@ if not exist "release\win-unpacked\Battery Pack Designer.exe" (
     echo  ERROR: Electron packaging failed — app exe not found in win-unpacked.
     pause
     exit /b 1
+)
+
+:: Bake .env into the packaged app so the installer contains the API key
+if exist "%~dp0backend\.env" (
+    echo  [env] Copying .env into win-unpacked\resources\backend\...
+    copy /y "%~dp0backend\.env" "release\win-unpacked\resources\backend\.env" >nul
 )
 
 :: Embed the app icon into the exe using rcedit (bypasses winCodeSign symlink issue)

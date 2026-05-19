@@ -186,6 +186,7 @@ export default function AIFab({ cell, form, result }) {
       const reader  = response.body.getReader()
       const decoder = new TextDecoder()
       let   buffer  = ''
+      let   gotContent = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -215,6 +216,7 @@ export default function AIFab({ cell, form, result }) {
 
             const delta = json.choices?.[0]?.delta?.content || ''
             if (delta) {
+              gotContent = true
               setMessages(prev => {
                 const u = [...prev]
                 const last = u[u.length - 1]
@@ -224,6 +226,15 @@ export default function AIFab({ cell, form, result }) {
             }
           } catch { /* skip malformed SSE line */ }
         }
+      }
+
+      // Stream ended with no content — gateway returned empty response
+      if (!gotContent) {
+        setMessages(prev => {
+          const u = [...prev]
+          u[u.length - 1] = { role: 'assistant', content: '⚠ No response received. Please try again.' }
+          return u
+        })
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
@@ -240,7 +251,7 @@ export default function AIFab({ cell, form, result }) {
       setStreaming(false)
       abortRef.current = null
     }
-  }, [messages, streaming, cell, form, result, lang])
+  }, [messages, streaming, cell, form, result, lang, provider])
 
   const handleSend = () => sendMessage(input)
 
