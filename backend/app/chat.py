@@ -265,7 +265,7 @@ async def stream_chat(
 
     # ── 1. Capgemini AI Gateway (corporate PC with CAPGEMINI_API_KEY in .env) ──
     ck = _capgemini_key()
-    if ck and provider in ("auto", "capgemini"):
+    if ck and provider == "capgemini":
         print(f"[chat] trying capgemini/{_CAPGEMINI_MODEL}", flush=True)
         try:
             full_messages_cap = [{"role": "system", "content": system_content}] + messages
@@ -307,6 +307,9 @@ async def stream_chat(
         if ok and provider in ("auto", "openrouter"):
             for m in _OPENROUTER_MODELS:
                 attempts.append(("openrouter", m, ok))
+    if not attempts and provider == "capgemini" and not ck:
+        yield 'data: {"error": "Capgemini key not configured. Add CAPGEMINI_API_KEY to backend/.env"}\n\n'
+        return
 
     if not attempts:
         yield 'data: {"error": "No API key found. Add ANTHROPIC_API_KEY to backend/.env"}\n\n'
