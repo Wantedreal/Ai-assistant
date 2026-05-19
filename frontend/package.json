@@ -32,21 +32,45 @@
       {
         "from": "../backend/dist/backend",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "icon": "build/icon",
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico"
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.productivity",
       "icon": "build/icon.png"
     },
     "linux": {
-      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "category": "Utility",
       "icon": "build/icon.png"
     },
@@ -64,6 +88,7 @@
     "electron-is-dev": "^3.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
     "three": "^0.183.2"
   },
   "devDependencies": {

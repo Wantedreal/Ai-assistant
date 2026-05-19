@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { useT, useLang } from '../i18n'
 
 const CHAT_URL = 'http://127.0.0.1:8000/api/v1/chat'
@@ -59,7 +60,7 @@ const S = {
     borderRadius: '10px 10px 10px 2px',
     padding: '7px 11px', maxWidth: '93%',
     color: '#cbd5e1', fontSize: '0.82rem', lineHeight: 1.65,
-    wordBreak: 'break-word', whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
   },
   inputRow: {
     display: 'flex', gap: 7, padding: '9px 11px',
@@ -91,7 +92,18 @@ function AiBubble({ content, streaming }) {
             ))}
           </span>
         )
-        : content
+        : <ReactMarkdown components={{
+            p:      ({ children }) => <p style={{ margin: '0 0 6px' }}>{children}</p>,
+            ul:     ({ children }) => <ul style={{ margin: '4px 0', paddingLeft: 18 }}>{children}</ul>,
+            ol:     ({ children }) => <ol style={{ margin: '4px 0', paddingLeft: 18 }}>{children}</ol>,
+            li:     ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
+            strong: ({ children }) => <strong style={{ color: '#e2e8f0' }}>{children}</strong>,
+            code:   ({ children }) => <code style={{ background: '#1e2028', borderRadius: 3, padding: '1px 5px', fontSize: '0.78rem', color: '#7dd3fc' }}>{children}</code>,
+            pre:    ({ children }) => <pre style={{ background: '#1e2028', borderRadius: 6, padding: '8px 10px', overflowX: 'auto', margin: '6px 0' }}>{children}</pre>,
+            h1:     ({ children }) => <p style={{ fontWeight: 700, color: '#e2e8f0', margin: '6px 0 4px' }}>{children}</p>,
+            h2:     ({ children }) => <p style={{ fontWeight: 700, color: '#e2e8f0', margin: '6px 0 4px' }}>{children}</p>,
+            h3:     ({ children }) => <p style={{ fontWeight: 600, color: '#cbd5e1', margin: '4px 0 2px' }}>{children}</p>,
+          }}>{content}</ReactMarkdown>
       }
     </div>
   )
