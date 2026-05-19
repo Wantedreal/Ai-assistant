@@ -13,14 +13,20 @@ On other machines: Groq/OpenRouter keys are embedded — no setup needed.
 """
 
 import os
+import sys
 import json
 import urllib.request
 import httpx
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
-# backend/.env — resolved relative to this file so it works regardless of cwd
-_ENV_PATH = Path(__file__).resolve().parent.parent / '.env'
+# In a PyInstaller frozen exe sys.executable is the .exe itself — .env lives next
+# to it.  In dev mode __file__ is backend/app/chat.py — .env is backend/.env.
+_ENV_PATH: Path = (
+    Path(sys.executable).parent / '.env'
+    if getattr(sys, 'frozen', False)
+    else Path(__file__).resolve().parent.parent / '.env'
+)
 
 # ── Embedded keys — fallback when .env is absent (e.g. another dev machine) ──
 # Keys are split across concatenated literals so static scanners cannot match

@@ -14,12 +14,17 @@ Rate limit on free tier: ~200 requests/day per key (ample for internal use).
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
 import httpx
 
-_ENV_PATH = Path(__file__).resolve().parent.parent / '.env'
+_ENV_PATH: Path = (
+    Path(sys.executable).parent / '.env'
+    if getattr(sys, 'frozen', False)
+    else Path(__file__).resolve().parent.parent / '.env'
+)
 
 # ── Embedded key for the production build ─────────────────────────────────────
 # Split across concatenated literals so static scanners cannot match the full
