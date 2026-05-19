@@ -577,18 +577,69 @@ async def chat_stream(req: _ChatRequest, db: Session = Depends(get_db)):
     """
     Accepts a conversation history and streams back the next assistant turn
     as Server-Sent Events (text/event-stream, OpenAI delta format).
-    Injects the current cell / form / result as context into the system prompt.
+    Injects current cell/form/result, catalog summary, and recent history.
     """
     from app.chat import stream_chat, build_context
+    from sqlalchemy import func as sqlfunc
 
     cell = None
     if req.cell_id:
         cell = db.query(Cellule).filter(Cellule.id == req.cell_id).first()
 
+    # ── Catalog summary ───────────────────────────────────────────────────────
+    try:
+        total_cells = db.query(sqlfunc.count(Cellule.id)).scalar()
+        chem_rows = (
+            db.query(Cellule.chimie, sqlfunc.count(Cellule.id))
+            .group_by(Cellule.chimie)
+            .order_by(sqlfunc.count(Cellule.id).desc())
+            .all()
+        )
+        top_energy = (
+            db.query(Cellule)
+            .filter(Cellule.energie_massique_wh_kg.isnot(None))
+            .order_by(Cellule.energie_massique_wh_kg.desc())
+            .limit(3)
+            .all()
+        )
+        chem_str = ", ".join(
+            f"{r[0] or 'unknown'}: {r[1]}" for r in chem_rows if r[1]
+        )
+        top_str = " | ".join(
+            f"{c.nom} ({c.energie_massique_wh_kg:.0f} Wh/kg)" for c in top_energy
+        )
+        catalog_summary = (
+            f"CATALOGUE: {total_cells} cells total | By chemistry: {chem_str}"
+            + (f" | Top energy density: {top_str}" if top_str else "")
+        )
+    except Exception:
+        catalog_summary = None
+
+    # ── Recent calculation history (last 3) ───────────────────────────────────
+    try:
+        from app.models.history import CalculationHistory
+        recent = (
+            db.query(CalculationHistory)
+            .order_by(CalculationHistory.timestamp.desc())
+            .limit(3)
+            .all()
+        )
+        history_lines = []
+        for h in recent:
+            history_lines.append(
+                f"  [{h.timestamp.strftime('%d/%m %H:%M')}] {h.cell_nom} "
+                f"{h.nb_serie}S×{h.nb_parallele}P → {h.verdict}"
+            )
+        recent_history = ("RECENT CALCULATIONS:\n" + "\n".join(history_lines)) if history_lines else None
+    except Exception:
+        recent_history = None
+
     context = build_context(
         cell=cell,
         form_data=req.form_data,
         result_data=req.result_data,
+        catalog_summary=catalog_summary,
+        recent_history=recent_history,
     )
 
     messages = [m.model_dump() for m in req.messages]

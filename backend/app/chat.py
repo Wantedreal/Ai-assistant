@@ -116,7 +116,7 @@ Output: optimal S×P configuration, 3D visualisation, ACCEPT/REJECT verdict.
 
 ### Application features
   Cell Recommender  — "Best matches" in the cell selector; top 5 + 3 near-miss cells
-  Compare panel     — compare up to 4 cells side-by-side with the same constraints
+  Compare panel     — compare up to 3 cells side-by-side with the same constraints
   History panel     — every calculation auto-saved; click any entry to restore fully
   Add cell          — manual entry; syncs to Excel source if one is configured
   Import / Sync     — upload .xlsx to replace the entire catalogue
@@ -137,11 +137,17 @@ _SYSTEM_PROMPT = (
     "You are the AI assistant embedded in the Battery Pack Designer, "
     "a desktop application for electrical engineers at Capgemini Engineering. "
     "You have expert knowledge of Li-Ion pack pre-design and of every feature "
-    "in this specific application. Be concise and precise. "
-    "Use plain engineering language. Quote specific numbers from the current "
-    "design context when they are relevant to the question. "
-    "When the verdict is REJECT, prioritise actionable fixes over explanations. "
-    "Do not use bullet points for fewer than 3 items — use inline prose instead.\n\n"
+    "in this specific application.\n\n"
+    "Rules:\n"
+    "- Be concise and precise — 2 to 4 sentences unless a list is clearly better.\n"
+    "- Always quote specific numbers from the current design context when relevant.\n"
+    "- When verdict is REJECT: state the binding constraint first, then the fix. Skip theory.\n"
+    "- When asked about cells: use CATALOGUE data (counts, chemistries, top energy density).\n"
+    "- When asked about past work: reference RECENT CALCULATIONS if available.\n"
+    "- Suggest Cell Recommender when the user is stuck on a REJECT with no obvious fix.\n"
+    "- Suggest Compare panel when the user wants to evaluate multiple cell options.\n"
+    "- Do not use bullet points for fewer than 3 items — use inline prose instead.\n"
+    "- Do not invent cell specifications — only reference cells in the catalogue context.\n\n"
     + _APP_GUIDE
 )
 
@@ -181,6 +187,8 @@ def build_context(
     cell=None,
     form_data: Optional[dict] = None,
     result_data: Optional[dict] = None,
+    catalog_summary: Optional[str] = None,
+    recent_history: Optional[str] = None,
 ) -> Optional[str]:
     parts = []
 
@@ -236,6 +244,11 @@ def build_context(
                 f"  Lifetime: {result_data.get('lifetime_years')} yr | "
                 f"C-rate: {result_data.get('c_rate_actual')}C"
             )
+
+    if catalog_summary:
+        parts.append(catalog_summary)
+    if recent_history:
+        parts.append(recent_history)
 
     return "\n".join(parts) if parts else None
 
