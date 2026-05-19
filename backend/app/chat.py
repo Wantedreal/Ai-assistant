@@ -246,10 +246,12 @@ async def stream_chat(
     messages: list,
     context: Optional[str] = None,
     lang: str = "en",
+    provider: str = "auto",
 ) -> AsyncIterator[str]:
     """
     Yield raw SSE lines ("data: {...}\\n\\n").
-    Priority: Anthropic Claude (ANTHROPIC_API_KEY in .env) → Groq → OpenRouter.
+    provider: "auto" tries Capgemini → Groq → OpenRouter in order.
+              "capgemini" | "groq" | "openrouter" forces that provider only.
     """
     lang_suffix = " Réponds en français." if lang == "fr" else ""
     system_content = _SYSTEM_PROMPT + lang_suffix
@@ -263,7 +265,7 @@ async def stream_chat(
 
     # ── 1. Capgemini AI Gateway (corporate PC with CAPGEMINI_API_KEY in .env) ──
     ck = _capgemini_key()
-    if ck:
+    if ck and provider in ("auto", "capgemini"):
         print(f"[chat] trying capgemini/{_CAPGEMINI_MODEL}", flush=True)
         try:
             full_messages_cap = [{"role": "system", "content": system_content}] + messages
@@ -296,14 +298,15 @@ async def stream_chat(
 
     # ── 2. Groq + OpenRouter (home / personal PC) ─────────────────────────────
     attempts: list[tuple[str, str, str]] = []
-    gk = _groq_key()
-    if gk:
-        for m in _GROQ_MODELS:
-            attempts.append(("groq", m, gk))
-    ok = _openrouter_key()
-    if ok:
-        for m in _OPENROUTER_MODELS:
-            attempts.append(("openrouter", m, ok))
+    if provider != "capgemini":
+        gk = _groq_key()
+        if gk and provider in ("auto", "groq"):
+            for m in _GROQ_MODELS:
+                attempts.append(("groq", m, gk))
+        ok = _openrouter_key()
+        if ok and provider in ("auto", "openrouter"):
+            for m in _OPENROUTER_MODELS:
+                attempts.append(("openrouter", m, ok))
 
     if not attempts:
         yield 'data: {"error": "No API key found. Add ANTHROPIC_API_KEY to backend/.env"}\n\n'

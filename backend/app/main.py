@@ -565,6 +565,7 @@ class _ChatRequest(_PydanticBase):
     cell_id: Optional[int] = None
     form_data: Optional[dict] = None
     result_data: Optional[dict] = None
+    provider: str = "auto"  # "auto" | "capgemini" | "groq" | "openrouter"
 
 
 @app.post(
@@ -593,7 +594,7 @@ async def chat_stream(req: _ChatRequest, db: Session = Depends(get_db)):
     messages = [m.model_dump() for m in req.messages]
 
     return StreamingResponse(
-        stream_chat(messages, context=context, lang=req.lang),
+        stream_chat(messages, context=context, lang=req.lang, provider=req.provider),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

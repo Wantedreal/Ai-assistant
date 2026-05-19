@@ -105,6 +105,7 @@ export default function AIFab({ cell, form, result }) {
   const [messages, setMessages] = useState([])
   const [input, setInput]       = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [provider, setProvider] = useState('auto')
   const bottomRef  = useRef(null)
   const textaRef   = useRef(null)
   const abortRef   = useRef(null)
@@ -132,6 +133,7 @@ export default function AIFab({ cell, form, result }) {
     const payload = {
       messages: history,
       lang,
+      provider,
       cell_id:     cell?.id ?? null,
       form_data:   form ? {
         housing_l:           form.housing_l,
@@ -300,6 +302,20 @@ export default function AIFab({ cell, form, result }) {
             </div>
 
             <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+              <select
+                value={provider}
+                onChange={e => setProvider(e.target.value)}
+                style={{
+                  background: '#252830', border: '1px solid #3a3c44',
+                  color: '#94a3b8', fontSize: '0.70rem', borderRadius: 5,
+                  padding: '2px 5px', cursor: 'pointer', outline: 'none',
+                }}
+              >
+                <option value="auto">Auto</option>
+                <option value="capgemini">Capgemini</option>
+                <option value="groq">Groq</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
               {messages.length > 0 && (
                 <button
                   onClick={clearChat}
