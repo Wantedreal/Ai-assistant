@@ -7,12 +7,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Separate Three.js and 3D viewer into their own chunk
-          'three-vendor': ['three'],
-          // Separate other vendors
-          'react-vendor': ['react', 'react-dom'],
-          'axios-vendor': ['axios'],
+        manualChunks(id) {
+          if (id.includes('node_modules/three')) return 'three-vendor';
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) return 'react-vendor';
+          if (id.includes('node_modules/axios')) return 'axios-vendor';
         }
       }
     },

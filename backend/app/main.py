@@ -24,11 +24,18 @@ except ImportError:
 
 import json
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
 
+# In the PyInstaller frozen exe, hide the interactive API docs to reduce
+# the attack surface. Docs remain available in dev mode (uvicorn --reload).
+_IS_FROZEN = getattr(sys, "frozen", False)
+_DOCS_URL = None if _IS_FROZEN else "/docs"
+_REDOC_URL = None if _IS_FROZEN else "/redoc"
+
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel as _PydanticBase
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -94,9 +101,13 @@ S/P (Série/Parallèle) et la vérification géométrique de packs batteries.
         "email": "pfe-battery@capgemini.com",
     },
     license_info={"name": "Proprietary — Capgemini Engineering"},
+    docs_url=_DOCS_URL,
+    redoc_url=_REDOC_URL,
 )
 
-# ── CORS — allow React dev server ─────────────────────────────────────────────
+# ── CORS — allow React dev server and Electron file:// origin ─────────────────
+# allow_credentials=True is required so Electron (file:// origin) can reach the
+# API; the regex restricts this to loopback addresses only.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -104,13 +115,13 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://localhost:80",
     ],
-    # Covers any port Vite auto-selects (5174, 5175, ...) and Electron file:// origin
+    # Covers any port Vite auto-selects (5174, 5175, …) and Electron file:// origin.
+    # Restricted to loopback only — no external origins are permitted.
     allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
 )
 
 
@@ -466,6 +477,12 @@ async def import_cells(
     If source_path is provided (Electron only), it is saved for future Sync calls.
     """
     content = await file.read()
+    _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({len(content) // (1024*1024)} MB). Maximum allowed is 50 MB."
+        )
     try:
         count = import_from_bytes(content, db)
     except ValueError as exc:
@@ -518,20 +535,24 @@ def get_import_config():
     return {"source_path": get_source_path()}
 
 
+class _ImportConfigBody(_PydanticBase):
+    source_path: str
+
+
 @app.post(
     "/api/v1/cells/import/config",
     tags=["Catalogue"],
     summary="Manually save the source Excel file path",
 )
-def set_import_config(body: dict):
+def set_import_config(body: _ImportConfigBody):
     """Saves the given path as the source .xlsx for future Sync and Excel-append calls."""
-    path = body.get("source_path", "").strip()
+    path = body.source_path.strip()
     if not path:
         raise HTTPException(status_code=422, detail="source_path is required")
-    if not Path(path).exists():
-        raise HTTPException(status_code=422, detail=f"File not found: {path}")
     if not path.lower().endswith(".xlsx"):
         raise HTTPException(status_code=422, detail="File must be an .xlsx file")
+    if not Path(path).exists():
+        raise HTTPException(status_code=422, detail=f"File not found: {path}")
     save_source_path(path)
     return {"source_path": path}
 
@@ -552,8 +573,6 @@ def clear_import_config():
 # ══════════════════════════════════════════════════════════════════════════════
 # AI CHAT (streaming multi-turn)
 # ══════════════════════════════════════════════════════════════════════════════
-
-from pydantic import BaseModel as _PydanticBase
 
 class _ChatMessage(_PydanticBase):
     role: str

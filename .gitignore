@@ -18,6 +18,7 @@ frontend/release/
 
 # Test artifacts
 test_report.pdf
+frontend/test-shots/
 
 # OS generated files
 .DS_Store

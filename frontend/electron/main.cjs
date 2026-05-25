@@ -11,7 +11,6 @@ const http = require('http')
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-webgl');
 app.commandLine.appendSwitch('use-angle', 'gl');
-app.commandLine.appendSwitch('disable-gpu-sandbox');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
 // Simple isDev check - if app is in unpacked directory it's dev mode
@@ -199,7 +198,6 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      enableRemoteModule: false,
     },
   })
 

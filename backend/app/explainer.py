@@ -26,13 +26,9 @@ _ENV_PATH: Path = (
     else Path(__file__).resolve().parent.parent / '.env'
 )
 
-# ── Embedded key for the production build ─────────────────────────────────────
-# Split across concatenated literals so static scanners cannot match the full
-# credential pattern against a single string token.  .env takes priority.
-_EMBEDDED_KEY: str = (
-    "sk-or-v1-15d24a0e5bc643f99842ad7add1793" +
-    "40e1fb009ae5199ca9d0fa6caa543c1170"
-)
+# API key is resolved exclusively from the environment / .env file at runtime.
+# Do NOT embed keys in source code — set OPENROUTER_API_KEY in backend/.env.
+_EMBEDDED_KEY: str = ""
 
 # Model fallback chain — tried in order until one responds without 429.
 # All are free on OpenRouter. Best reasoning first.
@@ -62,7 +58,6 @@ _SYSTEM_PROMPT = (
 
 
 def _get_key() -> str:
-    # 1. Environment variable / .env file
     try:
         from dotenv import load_dotenv
         load_dotenv(dotenv_path=_ENV_PATH)
@@ -71,15 +66,9 @@ def _get_key() -> str:
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if key:
         return key
-
-    # 2. Embedded constant (set before building .exe)
-    if _EMBEDDED_KEY:
-        return _EMBEDDED_KEY
-
     raise ValueError(
         "No OpenRouter API key found. "
-        "Either set OPENROUTER_API_KEY in backend/.env "
-        "or set _EMBEDDED_KEY in app/explainer.py before building."
+        "Set OPENROUTER_API_KEY in backend/.env to enable the AI explainer."
     )
 
 

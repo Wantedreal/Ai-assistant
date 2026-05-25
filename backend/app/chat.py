@@ -28,18 +28,11 @@ _ENV_PATH: Path = (
     else Path(__file__).resolve().parent.parent / '.env'
 )
 
-# ── Embedded keys — fallback when .env is absent (e.g. another dev machine) ──
-# Keys are split across concatenated literals so static scanners cannot match
-# the full credential pattern against a single string token.
-_GROQ_EMBEDDED: str = (
-    "gsk_1GJ9JPGPtNZ4lPAEuW" +
-    "6eWGdyb3FYzJn79qNWeY" +
-    "ffHQ5POVOxs9oC"
-)
-_OPENROUTER_EMBEDDED: str = (
-    "sk-or-v1-15d24a0e5bc643f99842ad7add1793" +
-    "40e1fb009ae5199ca9d0fa6caa543c1170"
-)
+# API keys are resolved exclusively from the environment / .env file at runtime.
+# Do NOT embed keys in source code.
+# Set GROQ_API_KEY and/or OPENROUTER_API_KEY in backend/.env.
+_GROQ_EMBEDDED: str = ""
+_OPENROUTER_EMBEDDED: str = ""
 
 _CAPGEMINI_URL  = "https://openai.generative.engine.capgemini.com/v1/chat/completions"
 _CAPGEMINI_MODEL = "anthropic.claude-sonnet-4-6"
@@ -175,16 +168,18 @@ def _capgemini_key() -> Optional[str]:
 
 def _groq_key() -> Optional[str]:
     _load_env()
-    return os.environ.get("GROQ_API_KEY", "").strip() or _GROQ_EMBEDDED or None
+    return os.environ.get("GROQ_API_KEY", "").strip() or None
 
 
 def _openrouter_key() -> Optional[str]:
     _load_env()
-    return os.environ.get("OPENROUTER_API_KEY", "").strip() or _OPENROUTER_EMBEDDED or None
+    return os.environ.get("OPENROUTER_API_KEY", "").strip() or None
 
 
 def _make_client(proxy: Optional[str]) -> httpx.AsyncClient:
-    return httpx.AsyncClient(timeout=60.0, verify=False, proxy=proxy)
+    # verify=True (default) — truststore.inject_into_ssl() in main.py already
+    # injects the Windows certificate store so Zscaler corporate CAs are trusted.
+    return httpx.AsyncClient(timeout=60.0, proxy=proxy)
 
 
 # ── Context builder ───────────────────────────────────────────────────────────

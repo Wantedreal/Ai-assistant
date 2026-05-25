@@ -34,7 +34,7 @@ if exist ".env" (
     echo  [env] Copying .env into dist\backend\...
     copy /y ".env" "dist\backend\.env" >nul
 ) else (
-    echo  [env] WARNING: backend\.env not found — AI chat will use embedded keys only.
+    echo  [env] WARNING: backend\.env not found — AI chat will not work. Create backend\.env with GROQ_API_KEY or OPENROUTER_API_KEY.
 )
 
 echo.

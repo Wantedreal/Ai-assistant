@@ -75,7 +75,7 @@ def _cache_key(req: CalculationRequest, result, cell: Cellule) -> str:
         getattr(req, 'end_plate_thickness_mm', 10.0) or 0.0,
         result.verdict.value if hasattr(result.verdict, 'value') else str(result.verdict),
     )
-    return hashlib.md5(str(parts).encode()).hexdigest()
+    return hashlib.md5(str(parts).encode(), usedforsecurity=False).hexdigest()
 
 
 def _cache_get(key: str) -> bytes | None:

@@ -42,9 +42,9 @@ def _migrate_schema():
             ('type_cellule_id', 'INTEGER'),
         ]:
             try:
-                conn.execute(text(f'SELECT {col} FROM cellules LIMIT 0'))
+                conn.execute(text(f'SELECT {col} FROM cellules LIMIT 0'))  # nosec B608 — col is a hardcoded literal, not user input
             except Exception:
-                conn.execute(text(f'ALTER TABLE cellules ADD COLUMN {col} {col_type}'))
+                conn.execute(text(f'ALTER TABLE cellules ADD COLUMN {col} {col_type}'))  # nosec B608
                 conn.commit()
         _migrate_history_autoincrement(conn)
         _seed_chimies(conn)
